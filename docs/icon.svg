@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- the launcher icon for docs and listings; the path mirrors app/src/main/res/drawable/ic_launcher.xml -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
+  <rect width="108" height="108" rx="24" fill="#000000" />
+  <path d="M50,37v-6q4,-9 8,0v6z M47,42h14v29h-14z M47,59l-7,9v5l7,-2 M61,59l7,9v5l-7,-2 M50,71l-2,5h12l-2,-5 M50.5,79q3.5,10 7,0z"
+      fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

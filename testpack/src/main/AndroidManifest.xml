@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:hasCode="false"
+        android:label="Booster Test Pack"
+        tools:ignore="MissingApplicationIcon">
+        <!-- launchers discover icon packs by these actions; the activity is never started -->
+        <activity
+            android:name=".Pack"
+            android:exported="true"
+            tools:ignore="MissingClass">
+            <intent-filter>
+                <action android:name="org.adw.launcher.THEMES" />
+                <action android:name="com.novalauncher.THEME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

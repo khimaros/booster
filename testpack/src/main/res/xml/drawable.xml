@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <category title="test" />
+    <item drawable="tp_settings" />
+    <item drawable="tp_clock" />
+    <item drawable="tp_star" />
+    <item drawable="folder" />
+</resources>

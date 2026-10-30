@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- stable ids for programmatic views, so the end-to-end tests can find them -->
+<resources>
+    <item name="home" type="id" />
+    <item name="pager" type="id" />
+    <item name="page_line" type="id" />
+    <item name="dock" type="id" />
+    <item name="zones" type="id" />
+    <item name="drawer" type="id" />
+    <item name="drawer_grid" type="id" />
+    <item name="search" type="id" />
+    <item name="search_band" type="id" />
+    <item name="status_band" type="id" />
+    <item name="folder_card" type="id" />
+    <item name="menu" type="id" />
+    <item name="sheet" type="id" />
+    <item name="sheet_icon" type="id" />
+    <item name="sheet_name" type="id" />
+    <item name="picker_grid" type="id" />
+    <item name="picker_chips" type="id" />
+</resources>

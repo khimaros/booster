@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">booster</string>
+    <string name="search_apps">search apps</string>
+    <string name="folder_default">folder</string>
+
+    <string name="edit">edit icon &amp; name</string>
+    <string name="edit_folder">edit folder</string>
+    <string name="add_to_folder">add to folder</string>
+    <string name="new_folder">new folder</string>
+    <string name="add_home">add to home</string>
+    <string name="add_dock">add to dock</string>
+    <string name="remove_home">remove from home</string>
+    <string name="remove_dock">remove from dock</string>
+    <string name="remove_from_folder">remove from folder</string>
+    <string name="hide">hide</string>
+    <string name="unhide">unhide</string>
+    <string name="app_info">app info</string>
+    <string name="uninstall">uninstall</string>
+    <string name="dissolve">dissolve</string>
+
+    <string name="background">background</string>
+    <string name="launcher_settings">launcher settings</string>
+    <string name="add_page">add page</string>
+    <string name="remove_page">remove empty page</string>
+
+    <string name="name">name</string>
+    <string name="folder_name">folder name</string>
+    <string name="original">original: %1$s</string>
+    <plurals name="apps_count">
+        <item quantity="one">%d app</item>
+        <item quantity="other">%d apps</item>
+    </plurals>
+    <string name="reset">reset</string>
+    <string name="done">done</string>
+
+    <string name="zone_remove">remove</string>
+    <string name="zone_edit">edit</string>
+    <string name="zone_info">app info</string>
+    <string name="hint_new_folder">release to create folder</string>
+    <string name="hint_add_folder">release to add to folder</string>
+
+    <string name="system_icons">System</string>
+    <string name="match">match</string>
+
+    <string name="section_icons">icons</string>
+    <string name="section_layout">layout</string>
+    <string name="section_backup">backup</string>
+    <string name="icon_pack">icon pack</string>
+    <string name="none">none</string>
+    <string name="show_labels">show labels</string>
+    <string name="drawer_animation">drawer animation</string>
+    <string name="hide_placed">hide home apps from drawer</string>
+    <string name="folder_name_taken">a folder named %1$s already exists</string>
+    <string name="background_black">black</string>
+    <string name="background_wallpaper">wallpaper</string>
+    <string name="colors">colors</string>
+    <string name="colors_dynamic">dynamic (system)</string>
+    <string name="colors_fixed">fixed</string>
+    <string name="home_grid">home grid</string>
+    <string name="grid_size">%1$d x %2$d</string>
+    <string name="grid_size_auto">%1$d x %2$d (auto)</string>
+    <string name="dock_slots">dock slots</string>
+    <string name="export_layout">export layout</string>
+    <string name="import_layout">import layout</string>
+    <string name="on">on</string>
+    <string name="off">off</string>
+
+    <string name="dock_full">dock is full</string>
+    <string name="import_failed">import failed</string>
+</resources>
