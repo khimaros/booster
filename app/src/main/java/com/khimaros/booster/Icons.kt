@@ -1,6 +1,7 @@
 package com.khimaros.booster
 
 import android.content.Context
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Handler
@@ -20,6 +21,7 @@ class Icons(private val ctx: Context) {
     private val executor = Executors.newFixedThreadPool(WORKERS)
     private val main = Handler(Looper.getMainLooper())
     private val density = ctx.resources.displayMetrics.densityDpi
+    private val launcher = ctx.getSystemService(LauncherApps::class.java)
 
     @Volatile
     var globalPack: String? = null
@@ -49,7 +51,10 @@ class Icons(private val ctx: Context) {
     private fun global(): IconPack? = globalPack?.let(::pack)
 
     fun base(app: AppInfo): Drawable =
-        global()?.let { p -> p.match(app.key)?.let(p::drawable) } ?: app.info.getIcon(density)
+        global()?.let { p -> p.match(app.key)?.let(p::drawable) }
+            ?: app.info?.getIcon(density)
+            ?: app.shortcut?.let { launcher.getShortcutIconDrawable(it, density) }
+            ?: ctx.getDrawable(R.drawable.ic_launcher)!!
 
     fun ref(ref: IconRef, apps: Map<String, AppInfo>): Drawable? =
         if (ref.pack != null) pack(ref.pack)?.drawable(ref.name) else apps[ref.name]?.let(::base)

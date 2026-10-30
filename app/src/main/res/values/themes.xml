@@ -11,4 +11,12 @@
     </style>
 
     <style name="Booster" parent="Booster.Base" />
+
+    <!-- shows the requesting app behind the confirmation sheet -->
+    <style name="Booster.Pin" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

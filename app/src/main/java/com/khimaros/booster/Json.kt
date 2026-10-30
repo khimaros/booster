@@ -10,6 +10,7 @@ fun Layout.toJson(): JSONObject = JSONObject()
     .put("pages", JSONArray(pages.map { page -> JSONArray(page.map(::itemJson)) }))
     .put("dock", JSONArray(dock.map(::itemJson)))
     .put("drawer_folders", JSONArray(drawerFolders.map(::itemJson)))
+    .put("drawer_order", JSONArray(drawerOrder))
     .put("hidden", JSONArray(hidden.sorted()))
     .put("overrides", JSONObject(overrides.toSortedMap().mapValues { (_, o) -> overrideJson(o) }))
     .put(
@@ -22,7 +23,8 @@ fun Layout.toJson(): JSONObject = JSONObject()
             .put("show_labels", settings.showLabels)
             .put("wallpaper", settings.wallpaper)
             .put("animate_drawer", settings.animateDrawer)
-            .put("hide_placed", settings.hidePlaced),
+            .put("hide_placed", settings.hidePlaced)
+            .put("remember_drawer", settings.rememberDrawer),
     )
     .put("next_id", nextId)
 
@@ -75,6 +77,7 @@ fun parseLayout(json: JSONObject): Layout {
         wallpaper = s.optBoolean("wallpaper", false),
         animateDrawer = s.optBoolean("animate_drawer", true),
         hidePlaced = s.optBoolean("hide_placed", false),
+        rememberDrawer = s.optBoolean("remember_drawer", false),
     )
     val size = settings.rows * COLUMNS
     val pages = json.optJSONArray("pages").items()
@@ -91,6 +94,7 @@ fun parseLayout(json: JSONObject): Layout {
         pages = pages,
         dock = List(settings.dockSlots) { dock.getOrNull(it) },
         drawerFolders = json.optJSONArray("drawer_folders").items().mapNotNull { parseItem(it) as? Folder },
+        drawerOrder = json.optJSONArray("drawer_order").items().map { it.toString() },
         hidden = json.optJSONArray("hidden").items().map { it.toString() }.toSet(),
         overrides = overrides,
         settings = settings,

@@ -50,10 +50,14 @@ def main(outdir):
         d.find(desc="Phone", within="dock")
         for label in ("Calendar", "Gallery", "Files", "Clock", "Contacts"):
             add_to_home(label)
-        d.drag(
-            d.find(desc="Contacts", within="pager"),
-            d.find(desc="Clock", within="pager"),
-        )
+        d.long_press(d.find(desc="Clock", within="pager"))
+        d.choose("add to folder")
+        d.choose("new folder")
+        d.find(rid="sheet_name")
+        d.choose("done")
+        d.long_press(d.find(desc="Contacts", within="pager"))
+        d.choose("add to folder")
+        d.choose("folder")
         d.find(desc="folder", within="pager")
         shot(outdir, "1-home")
         d.tap(d.find(desc="folder", within="pager"))

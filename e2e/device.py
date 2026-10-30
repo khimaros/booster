@@ -38,6 +38,7 @@ LOCK_WAIT = 600
 PACKAGE = "com.khimaros.booster"
 ACTIVITY = f"{PACKAGE}/.LauncherActivity"
 TESTPACK = "com.khimaros.booster.testpack"
+TESTPIN = "com.khimaros.booster.testpin"
 BOOT_TIMEOUT = 300
 UI_TIMEOUT = 10
 LONG_PRESS_MS = 900
@@ -302,8 +303,9 @@ def wait_resumed(package, timeout=UI_TIMEOUT):
 
 
 def screen_size():
-    match = re.search(r"(\d+)x(\d+)", shell("wm", "size"))
-    return int(match.group(1)), int(match.group(2))
+    """the size in effect: `wm size` lists any override after the physical size."""
+    width, height = re.findall(r"(\d+)x(\d+)", shell("wm", "size"))[-1]
+    return int(width), int(height)
 
 
 def layout_json():
@@ -458,6 +460,13 @@ def choose(text, within=None):
 def long_press(node):
     x, y = node.center
     shell("input", "swipe", str(x), str(y), str(x), str(y), str(LONG_PRESS_MS))
+
+
+def beside(node, fraction):
+    """a point inside `node` at this fraction of its width, for drops that insert rather than join."""
+    x = node.bounds[0] + int(node.width * fraction)
+    y = node.center[1]
+    return Node("", "", "", (x, y, x, y))
 
 
 def drag(source, target, via=()):

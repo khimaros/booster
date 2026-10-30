@@ -1,5 +1,7 @@
 package com.khimaros.booster
 
+import kotlin.math.abs
+
 const val COLUMNS = 4
 const val DEFAULT_ROWS = 5
 const val DEFAULT_DOCK_SLOTS = 5
@@ -31,6 +33,8 @@ data class Settings(
     val wallpaper: Boolean = false,
     val animateDrawer: Boolean = true,
     val hidePlaced: Boolean = false,
+    // coming back from an app finds the drawer, its search and scroll as they were
+    val rememberDrawer: Boolean = false,
 )
 
 // the whole persisted launcher state. every change is a pure function returning a new layout.
@@ -38,6 +42,8 @@ data class Layout(
     val pages: List<List<Item?>>,
     val dock: List<Item?>,
     val drawerFolders: List<Folder> = emptyList(),
+    // the drawer's manual arrangement of app keys and folder ids. empty means sorted by name.
+    val drawerOrder: List<String> = emptyList(),
     val hidden: Set<String> = emptySet(),
     val overrides: Map<String, Override> = emptyMap(),
     val settings: Settings = Settings(),
@@ -49,7 +55,12 @@ sealed interface Slot
 data class HomeSlot(val page: Int, val index: Int) : Slot
 data class DockSlot(val index: Int) : Slot
 data class FolderSlot(val folderId: String, val key: String) : Slot
+
+// an entry at the drawer's top level: an app key or a drawer folder id
 data class DrawerSlot(val key: String) : Slot
+
+// how a drag lands on a drawer entry: beside it, or on it (joining a folder, swapping with anything else)
+enum class Drop { BEFORE, ONTO, AFTER }
 
 fun emptyPage(rows: Int): List<Item?> = List(rows * COLUMNS) { null }
 
@@ -68,7 +79,7 @@ fun Layout.itemAt(slot: Slot): Item? = when (slot) {
     is HomeSlot -> pages.getOrNull(slot.page)?.getOrNull(slot.index)
     is DockSlot -> dock.getOrNull(slot.index)
     is FolderSlot -> AppItem(slot.key)
-    is DrawerSlot -> AppItem(slot.key)
+    is DrawerSlot -> drawerFolders.firstOrNull { it.id == slot.key } ?: AppItem(slot.key)
 }
 
 private fun Layout.put(slot: Slot, item: Item?): Layout = when (slot) {
@@ -100,10 +111,23 @@ fun Layout.updateFolder(id: String, name: String, icon: IconRef?) = replaceFolde
 fun Layout.addToFolder(id: String, key: String) =
     replaceFolder(id) { if (key in it.apps) it else it.copy(apps = it.apps + key) }
 
-// moves an app to a new position within its folder
-fun Layout.moveInFolder(id: String, key: String, index: Int) = replaceFolder(id) { folder ->
+private fun List<String>.swapped(a: String, b: String) = map {
+    when (it) {
+        a -> b
+        b -> a
+        else -> it
+    }
+}
+
+// rearranges an open folder: landing on an app swaps with it, landing beside one moves there
+fun Layout.dropInFolder(id: String, key: String, target: String, where: Drop) = replaceFolder(id) { folder ->
     val rest = folder.apps - key
-    folder.copy(apps = rest.toMutableList().apply { add(index.coerceIn(0, rest.size), key) })
+    val at = rest.indexOf(target)
+    when {
+        at < 0 -> folder
+        where == Drop.ONTO -> folder.copy(apps = folder.apps.swapped(key, target))
+        else -> folder.copy(apps = rest.toMutableList().apply { add(if (where == Drop.AFTER) at + 1 else at, key) })
+    }
 }
 
 // a folder left with one app collapses into that app; a drawer folder just goes away
@@ -171,6 +195,32 @@ fun Layout.placedKeys(): Set<String> = (pages.flatten() + dock).flatMap {
     }
 }.toSet()
 
+// every key the layout refers to, wherever it lives
+fun Layout.allKeys(): Set<String> = placedKeys() + drawerFolders.flatMap { it.apps }
+
+// the drawer's entries in order: the manual arrangement, then anything it does not know yet.
+// `natural` lists every entry the drawer could show, in its sorted order.
+fun Layout.arranged(natural: List<String>): List<String> {
+    val known = natural.toSet()
+    val ordered = drawerOrder.filter { it in known }
+    return ordered + (natural - ordered.toSet())
+}
+
+// moves a drawer entry beside another one
+fun Layout.moveInDrawer(natural: List<String>, id: String, target: String, after: Boolean): Layout {
+    if (id == target) return this
+    val rest = arranged(natural) - id
+    val at = rest.indexOf(target).let { if (it < 0) rest.size else if (after) it + 1 else it }
+    return copy(drawerOrder = rest.toMutableList().apply { add(at, id) })
+}
+
+fun Layout.moveToDrawerEdge(natural: List<String>, id: String, top: Boolean): Layout {
+    val rest = arranged(natural) - id
+    return copy(drawerOrder = if (top) listOf(id) + rest else rest + id)
+}
+
+fun Layout.swapInDrawer(natural: List<String>, a: String, b: String) = copy(drawerOrder = arranged(natural).swapped(a, b))
+
 // the folder an item stands for: itself, or the drawer folder a link points at
 fun Layout.folderOf(item: Item?): Folder? = when (item) {
     is Folder -> item
@@ -192,12 +242,35 @@ fun Layout.moveToDrawerFolder(id: String, key: String): Layout {
     return (current?.let { removeFromFolder(it.id, key) } ?: this).addToFolder(id, key)
 }
 
-// drag and drop: onto an empty slot moves, onto an app makes a folder, onto a folder adds to it,
-// and anything else swaps the two home or dock slots.
-fun Layout.drop(source: Slot, item: Item, target: Slot, folderName: String): Layout {
-    if (source == target || target is FolderSlot || target is DrawerSlot) return this
+// puts an item at `index` by closing a gap: `vacated` when the item came from this row, else the nearest.
+// null when the row has no gap.
+private fun List<Item?>.inserted(index: Int, item: Item, vacated: Int?): List<Item?>? {
+    val gap = vacated ?: indices.filter { this[it] == null }.minByOrNull { abs(it - index) } ?: return null
+    return toMutableList().apply {
+        removeAt(gap)
+        add(if (gap < index) index - 1 else index, item)
+    }
+}
+
+private fun Layout.insertBeside(source: Slot, target: Slot, where: Drop, item: Item): Layout? {
+    val offset = if (where == Drop.AFTER) 1 else 0
+    return when (target) {
+        is HomeSlot -> {
+            val vacated = (source as? HomeSlot)?.takeIf { it.page == target.page }?.index
+            pages[target.page].inserted(target.index + offset, item, vacated)?.let { copy(pages = pages.replaced(target.page, it)) }
+        }
+        is DockSlot -> dock.inserted(target.index + offset, item, (source as? DockSlot)?.index)?.let { copy(dock = it) }
+        else -> null
+    }
+}
+
+// drag and drop: beside an item inserts there, onto an empty slot moves, an app onto a folder adds to it,
+// and anything else swaps the two home or dock slots. a full row, or an item with no slot of its own to
+// swap with, leaves everything as it was.
+fun Layout.drop(source: Slot, item: Item, target: Slot, where: Drop): Layout {
+    if ((source == target && where == Drop.ONTO) || target is FolderSlot || target is DrawerSlot) return this
     val before = folderOf(itemAt(target))
-    if (source is FolderSlot && before?.id == source.folderId) return this
+    if (where == Drop.ONTO && source is FolderSlot && before?.id == source.folderId) return this
     val movable = source is HomeSlot || source is DockSlot
     // home and dock folders give the app up; drawer folders, like the drawer, only lend a shortcut
     val lifted = when (source) {
@@ -205,12 +278,11 @@ fun Layout.drop(source: Slot, item: Item, target: Slot, folderName: String): Lay
         is FolderSlot -> if (isDrawerFolder(source.folderId)) this else removeFromFolder(source.folderId, source.key)
         is DrawerSlot -> this
     }
+    val placed = if (item is Folder && source is DrawerSlot) FolderLink(item.id) else item
+    if (where != Drop.ONTO) return lifted.insertBeside(source, target, where, placed) ?: this
     val existing = lifted.itemAt(target)
     return when {
-        existing == null -> lifted.put(target, item)
-        existing is AppItem && item is AppItem ->
-            if (existing.key == item.key) lifted.put(target, existing)
-            else lifted.newFolderAt(target, listOf(existing.key, item.key), folderName).first
+        existing == null -> lifted.put(target, placed)
         existing is Folder && item is AppItem -> lifted.addToFolder(existing.id, item.key)
         existing is FolderLink && item is AppItem -> lifted.moveToDrawerFolder(existing.id, item.key)
         movable -> lifted.put(target, item).put(source, existing)

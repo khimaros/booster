@@ -10,6 +10,10 @@ import android.graphics.drawable.Drawable
 import android.text.TextPaint
 import android.text.TextUtils
 import android.view.View
+import android.view.ViewGroup
+
+// this fraction of a cell's width, on each side, belongs to the gap beside it
+private const val BESIDE_MARGIN = 0.25f
 
 // one grid cell: icon, optional label, optional folder badge and drop highlight, all drawn directly
 @SuppressLint("ViewConstructor")
@@ -47,11 +51,24 @@ class CellView(ctx: Context, private val scale: Scale, palette: Palette) : View(
         textAlign = Paint.Align.CENTER
         setShadowLayer(scale.p(0), 0f, scale.stroke, Color.BLACK)
     }
+    // where a hovering drag would land on this cell
+    var marker: Drop? = null
+        set(value) {
+            if (field != value) invalidate()
+            field = value
+            isSelected = value != null
+        }
+
     private val ringFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.ring }
     private val ringStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.accent
         style = Paint.Style.STROKE
         strokeWidth = scale.stroke
+    }
+    private val markerStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = palette.accent
+        strokeCap = Paint.Cap.ROUND
+        strokeWidth = 2 * scale.stroke
     }
     private val badgeFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.surfaceHi }
     private val badgeOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -68,8 +85,22 @@ class CellView(ctx: Context, private val scale: Scale, palette: Palette) : View(
         badge = null
         label = ""
         highlighted = false
+        marker = null
         isClickable = false
         isLongClickable = false
+    }
+
+    // how a drag at `x` lands here, the same in every view: the sides go beside the item and the middle lands
+    // on it, if `canLand` allows. an empty cell takes the drag whole.
+    fun landing(x: Float, canLand: (Item) -> Boolean): Drop {
+        val target = item ?: return Drop.ONTO
+        val at = x / width
+        return when {
+            at < BESIDE_MARGIN -> Drop.BEFORE
+            at > 1 - BESIDE_MARGIN -> Drop.AFTER
+            canLand(target) -> Drop.ONTO
+            else -> if (at < 0.5f) Drop.BEFORE else Drop.AFTER
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -77,7 +108,11 @@ class CellView(ctx: Context, private val scale: Scale, palette: Palette) : View(
         val labelled = showLabel && label.isNotEmpty()
         val top = (height - size - if (labelled) scale.labelGap + scale.line else 0) / 2
         val left = (width - size) / 2
-        if (highlighted) {
+        if (marker == Drop.BEFORE || marker == Drop.AFTER) {
+            val x = if (marker == Drop.BEFORE) scale.stroke else width - scale.stroke
+            canvas.drawLine(x, top.toFloat(), x, (top + size).toFloat(), markerStroke)
+        }
+        if (highlighted || marker == Drop.ONTO) {
             // never wider than the space around the icon, so the cell bounds do not clip it
             val pad = minOf(scale.tight, top, left).toFloat()
             rect.set(left - pad, top - pad, left + size + pad, top + size + pad)
@@ -107,6 +142,30 @@ class CellView(ctx: Context, private val scale: Scale, palette: Palette) : View(
         val inner = (radius - scale.stroke).toInt()
         badge.setBounds((cx - inner).toInt(), (cy - inner).toInt(), (cx + inner).toInt(), (cy + inner).toInt())
         badge.draw(canvas)
+    }
+}
+
+// shows where a drag will land. the gap between two cells is one place, so it is always marked on the cell
+// after it; only the end of a row marks its own right side.
+class DropMarks {
+    private var marked: CellView? = null
+
+    fun show(cell: CellView, drop: Drop) {
+        val next = if (drop == Drop.AFTER) nextInRow(cell) else null
+        val at = next ?: cell
+        if (marked !== at) marked?.marker = null
+        at.marker = if (next != null) Drop.BEFORE else drop
+        marked = at
+    }
+
+    fun clear() {
+        marked?.marker = null
+        marked = null
+    }
+
+    private fun nextInRow(cell: CellView): CellView? {
+        val row = cell.parent as? ViewGroup ?: return null
+        return (row.getChildAt(row.indexOfChild(cell) + 1) as? CellView)?.takeIf { it.top == cell.top }
     }
 }
 

@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.LauncherApps
+import android.content.pm.ShortcutInfo
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
@@ -13,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.UserHandle
 import android.text.Editable
 import android.text.TextWatcher
@@ -59,11 +61,13 @@ class LauncherActivity : Activity() {
         private set
     private var loaded = false
     private var shownWallpaper: Boolean? = null
+    private var leftForApp = false
 
     val worker = Executors.newSingleThreadExecutor()
     val main = Handler(Looper.getMainLooper())
     private val drawerAdapter = DrawerAdapter()
     private var drag: DragPayload? = null
+    private val marks = DropMarks()
     private var armed: Pair<CellView, View>? = null
     private var openCard: View? = null
     private var openFolder: Pair<String, CellGrid>? = null
@@ -72,7 +76,11 @@ class LauncherActivity : Activity() {
     private val slop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
     private val launcherApps by lazy { getSystemService(LauncherApps::class.java) }
 
+    // a pin accepted in PinActivity reaches the layout through onShortcutsChanged, which needs no running ui
     private val packageCallback = object : LauncherApps.Callback() {
+        override fun onShortcutsChanged(pkg: String, shortcuts: MutableList<ShortcutInfo>, user: UserHandle) {
+            if (shortcuts.any { it.isPinned } || apps.values.any { it.shortcut?.`package` == pkg }) reloadApps()
+        }
         override fun onPackageRemoved(pkg: String, user: UserHandle) = reloadApps(removed = pkg)
         override fun onPackageAdded(pkg: String, user: UserHandle) = reloadApps(changed = pkg)
         override fun onPackageChanged(pkg: String, user: UserHandle) = reloadApps(changed = pkg)
@@ -102,12 +110,14 @@ class LauncherActivity : Activity() {
         worker.execute {
             val saved = store.load()
             val list = loadApps(this)
+            val pinned = loadShortcuts(this)
             val found = findIconPacks(this)
             val initial = saved ?: newLayout(defaultDockKeys(this, list))
             main.post {
-                setApps(list, found)
+                setApps(list, pinned, found)
                 loaded = true
                 commit(initial, persist = saved == null)
+                placeShortcuts()
                 home.post(::fitRows)
             }
         }
@@ -119,8 +129,25 @@ class LauncherActivity : Activity() {
         super.onDestroy()
     }
 
+    override fun onStop() {
+        super.onStop()
+        leftForApp = true
+    }
+
+    // closing on the way back rather than the way out shows no flash of home while the app opens. launch()
+    // also counts as leaving, because a translucent app never stops the launcher. with the drawer shut
+    // nothing happens, so a sheet waiting on a file picker's result survives.
+    override fun onResume() {
+        super.onResume()
+        val forget = leftForApp && drawer.isOpen && !layout.settings.rememberDrawer
+        leftForApp = false
+        if (!forget) return
+        overlays.clear()
+        drawer.closeNow()
+    }
+
     // pressing home while already home closes everything and returns to the first page. coming back
-    // from an app leaves the drawer, its search and scroll exactly as they were.
+    // from an app is not that, so a remembered drawer stays as it was.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val broughtToFront = intent.flags and Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT != 0
@@ -163,7 +190,9 @@ class LauncherActivity : Activity() {
     // --- state ---
 
     fun commit(next: Layout, persist: Boolean = true) {
+        val before = layout
         layout = next.tidy()
+        unpin(before.allKeys() - layout.allKeys())
         render()
         if (persist) {
             val text = Store.encode(layout)
@@ -171,21 +200,48 @@ class LauncherActivity : Activity() {
         }
     }
 
-    private fun setApps(list: List<AppInfo>, found: List<PackInfo>) {
+    private fun setApps(list: List<AppInfo>, pinned: List<AppInfo>, found: List<PackInfo>) {
         appList = list
-        apps = list.associateBy { it.key }
+        apps = (list + pinned).associateBy { it.key }
         packs = found
     }
 
     private fun reloadApps(removed: String? = null, changed: String? = null) {
         worker.execute {
             val list = loadApps(this)
+            val pinned = loadShortcuts(this)
             val found = findIconPacks(this)
             main.post {
-                setApps(list, found)
+                setApps(list, pinned, found)
                 (removed ?: changed)?.let(icons::forgetPack)
                 if (!loaded) return@post
                 if (removed != null) commit(layout.prune { it.startsWith("$removed/") }) else render()
+                placeShortcuts()
+            }
+        }
+    }
+
+    // the system holds what is pinned: anything the layout has not seen yet was just added
+    private fun placeShortcuts() {
+        val known = layout.allKeys()
+        val fresh = apps.values.filter { it.shortcut != null && it.key !in known }
+        if (fresh.isNotEmpty()) commit(fresh.fold(layout) { next, app -> next.placeOnHome(AppItem(app.key)) })
+    }
+
+    // shortcuts that left the layout must leave the system too, or they would come back as new
+    private fun unpin(gone: Set<String>) {
+        val leaving = gone.mapNotNull { apps[it]?.shortcut }
+        if (leaving.isEmpty()) return
+        apps = apps - gone
+        val kept = apps.values.mapNotNull { it.shortcut }
+        leaving.map { it.`package` }.distinct().forEach { pkg ->
+            val ids = kept.filter { it.`package` == pkg }.map { it.id }
+            worker.execute {
+                try {
+                    pinShortcuts(this, pkg, ids)
+                } catch (e: RuntimeException) {
+                    Log.w(TAG, "unpin in $pkg failed", e)
+                }
             }
         }
     }
@@ -306,6 +362,12 @@ class LauncherActivity : Activity() {
 
     private fun wireDrawer() {
         drawer.grid.adapter = drawerAdapter
+        drawer.grid.setOnDragListener(drawerDropListener)
+        drawer.zoneHome.setOnDragListener { _, ev ->
+            if (ev.localState !is DragPayload) return@setOnDragListener false
+            if (ev.action == DragEvent.ACTION_DRAG_ENTERED) closeDrawer()
+            true
+        }
         drawer.search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -336,19 +398,33 @@ class LauncherActivity : Activity() {
         drawerAdapter.notifyDataSetChanged()
     }
 
-    // browsing: drawer folders, then loose visible apps. searching: every app, prefix matches first.
-    private fun drawerEntries(query: String): List<Item> {
-        val byLabel = compareBy<AppInfo> { labelOf(it.key).lowercase() }
-        if (query.isEmpty()) {
-            val foldered = layout.drawerFolders.flatMap { it.apps }.toSet()
-            val folders = layout.drawerFolders.filter { drawerFolderApps(it).isNotEmpty() }.sortedBy { it.name.lowercase() }
-            return folders + appList.filter { it.key !in foldered && it.key !in layout.hidden && !hiddenAsPlaced(it.key) }
-                .sortedWith(byLabel).map { AppItem(it.key) }
+    private val byLabel get() = compareBy<AppInfo> { labelOf(it.key).lowercase() }
+
+    // every top level drawer entry in its default order: folders, then loose apps, each sorted by name
+    private fun naturalDrawer(of: Layout = layout): List<String> {
+        val foldered = of.drawerFolders.flatMap { it.apps }.toSet()
+        return of.drawerFolders.sortedBy { it.name.lowercase() }.map { it.id } +
+            appList.filter { it.key !in foldered }.sortedWith(byLabel).map { it.key }
+    }
+
+    private fun visibleInDrawer(id: String): Item? {
+        val folder = layout.drawerFolders.firstOrNull { it.id == id }
+        return when {
+            folder != null -> folder.takeIf { drawerFolderApps(it).isNotEmpty() }
+            id in layout.hidden || hiddenAsPlaced(id) -> null
+            else -> AppItem(id)
         }
+    }
+
+    // browsing: the drawer's arrangement of folders and loose visible apps. searching: every app, prefix matches first.
+    private fun drawerEntries(query: String): List<Item> {
+        if (query.isEmpty()) return layout.arranged(naturalDrawer()).mapNotNull(::visibleInDrawer)
         return appList.filter { labelOf(it.key).lowercase().contains(query) }
             .sortedWith(compareBy<AppInfo> { !labelOf(it.key).lowercase().startsWith(query) }.then(byLabel))
             .map { AppItem(it.key) }
     }
+
+    private fun drawerId(item: Item) = (item as? AppItem)?.key ?: (item as Folder).id
 
     // with "hide apps on home", the drawer and its folders leave out what is already on home or the dock
     private fun hiddenAsPlaced(key: String) = layout.settings.hidePlaced && key in layout.placedKeys()
@@ -363,7 +439,7 @@ class LauncherActivity : Activity() {
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val cell = convertView as? CellView ?: newCell().apply { layoutParams = AbsListView.LayoutParams(scale.cell, scale.cell) }
             val item = entries[position]
-            bind(cell, item, (item as? AppItem)?.let { DrawerSlot(it.key) }, layout.settings.showLabels)
+            bind(cell, item, DrawerSlot(drawerId(item)), layout.settings.showLabels)
             return cell
         }
     }
@@ -382,15 +458,17 @@ class LauncherActivity : Activity() {
             Rect(at[0], at[1], at[0] + v.width, at[1] + v.height)
         }
         try {
-            launcherApps.startMainActivity(app.component, app.info.user, bounds, null)
+            if (app.shortcut != null) launcherApps.startShortcut(app.shortcut, bounds, null)
+            else launcherApps.startMainActivity(app.component, Process.myUserHandle(), bounds, null)
+            leftForApp = true
         } catch (e: RuntimeException) {
             Log.w(TAG, "launch $key failed", e)
         }
     }
 
     fun appInfo(key: String) {
-        val app = apps[key] ?: return
-        launcherApps.startAppDetailsActivity(app.component, app.info.user, null, null)
+        val component = apps[key]?.component ?: return
+        launcherApps.startAppDetailsActivity(component, Process.myUserHandle(), null, null)
     }
 
     private fun uninstall(key: String) {
@@ -408,7 +486,7 @@ class LauncherActivity : Activity() {
         val grid = CellGrid(this, scale, 1)
         openFolder = folder.id to grid
         fillCard(grid, folder)
-        openCard = overlays.card(grid, onDragOut = ::closeDrawer)
+        openCard = overlays.card(grid)
     }
 
     private fun fillCard(grid: CellGrid, folder: Folder) {
@@ -435,18 +513,20 @@ class LauncherActivity : Activity() {
         if (folder == null) overlays.dismiss(card) else fillCard(grid, folder)
     }
 
-    // dropping an app on another app in the same open folder moves it to that position
+    // within an open folder the usual rules apply: on an app swaps, beside one moves there
     private val folderDropListener = View.OnDragListener { v, ev ->
         val cell = v as CellView
         val target = cell.slot as? FolderSlot
-        val source = (ev.localState as? DragPayload)?.source as? FolderSlot
+        val payload = ev.localState as? DragPayload
+        val source = payload?.source as? FolderSlot
         if (target == null || source == null || source.folderId != target.folderId) return@OnDragListener false
+        val lands = { item: Item -> canLand(payload, item, swaps = true) }
         when (ev.action) {
-            DragEvent.ACTION_DRAG_ENTERED -> cell.highlighted = true
-            DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> cell.highlighted = false
+            DragEvent.ACTION_DRAG_LOCATION -> marks.show(cell, cell.landing(ev.x, lands))
+            DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> marks.clear()
             DragEvent.ACTION_DROP -> {
-                val index = layout.findFolder(target.folderId)?.apps?.indexOf(target.key) ?: return@OnDragListener false
-                commit(layout.moveInFolder(target.folderId, source.key, index))
+                marks.clear()
+                commit(layout.dropInFolder(target.folderId, source.key, target.key, cell.landing(ev.x, lands)))
             }
         }
         true
@@ -469,7 +549,7 @@ class LauncherActivity : Activity() {
         val info = MenuEntry(getString(R.string.app_info)) { appInfo(key) }
         val uninstall = MenuEntry(getString(R.string.uninstall), danger = true) { uninstall(key) }
         val toFolder = MenuEntry(getString(R.string.add_to_folder)) { folderChooser(key, slot) }
-        return when (slot) {
+        val entries = when (slot) {
             is HomeSlot -> listOf(edit, MenuEntry(getString(R.string.remove_home)) { remove(slot) }, info, toFolder, uninstall)
             is DockSlot -> listOf(edit, MenuEntry(getString(R.string.remove_dock)) { remove(slot) }, info, toFolder, uninstall)
             is FolderSlot -> {
@@ -480,19 +560,30 @@ class LauncherActivity : Activity() {
             is DrawerSlot -> placeEntries(AppItem(key)) + listOf(
                 edit,
                 MenuEntry(getString(if (key in layout.hidden) R.string.unhide else R.string.hide)) { commit(layout.toggleHidden(key)) },
+                moveEntry(key),
                 info,
                 toFolder,
                 uninstall,
             )
         }
+        return if (apps[key]?.shortcut != null) entries - uninstall else entries
     }
 
-    // a drawer folder (no slot) can also be placed on home or the dock, as a link to itself
+    // a drawer folder can also be placed on home or the dock, as a link to itself
     private fun folderMenu(folder: Folder, slot: Slot?): List<MenuEntry> {
         val edit = MenuEntry(getString(R.string.edit_folder)) { openEdit(folder) }
         val dissolve = MenuEntry(getString(R.string.dissolve), danger = true) { commit(layout.dissolve(folder.id)) }
-        if (slot != null) return listOf(edit, MenuEntry(getString(R.string.zone_remove)) { remove(slot) }, dissolve)
-        return placeEntries(FolderLink(folder.id)) + listOf(edit, dissolve)
+        if (slot != null && slot !is DrawerSlot) return listOf(edit, MenuEntry(getString(R.string.zone_remove)) { remove(slot) }, dissolve)
+        return placeEntries(FolderLink(folder.id)) + listOf(edit, moveEntry(folder.id), dissolve)
+    }
+
+    // the menu's way to rearrange the drawer, for anything that would otherwise take a long drag
+    private fun moveEntry(id: String) = MenuEntry(getString(R.string.move_in_drawer)) {
+        overlays.menu(
+            listOf(R.string.move_top to true, R.string.move_bottom to false).map { (text, top) ->
+                MenuEntry(getString(text)) { commit(layout.moveToDrawerEdge(naturalDrawer(), id, top)) }
+            },
+        )
     }
 
     // a linked drawer folder on home or the dock: removing it only removes the link
@@ -567,16 +658,19 @@ class LauncherActivity : Activity() {
     private fun startDrag(cell: CellView) {
         val payload = DragPayload(cell.slot ?: return, cell.item ?: return)
         drag = payload
+        // search results are not the drawer's arrangement, so a drag from them goes straight to home
+        val rearranging = drawer.isOpen && drawer.search.text.isEmpty()
         // drop targets must be showing when the drag starts to receive its events
         home.showDragUi(true)
+        drawer.showDragUi(rearranging)
         // the platform refuses a drag when the finger has already lifted: then nothing changes
         if (!cell.startDragAndDrop(null, View.DragShadowBuilder(cell), payload, 0)) {
             endDrag()
             return
         }
-        // an app dragged from an open folder keeps the folder (and the drawer under it) open, so it can be
-        // reordered; leaving the card reveals home
-        if (payload.source is FolderSlot) return
+        // an app dragged from an open folder keeps the folder open, so it can be reordered; leaving the
+        // card reveals what is beneath it
+        if (payload.source is FolderSlot || rearranging) return
         overlays.clear()
         closeDrawer()
     }
@@ -585,35 +679,88 @@ class LauncherActivity : Activity() {
         if (drag == null) return
         drag = null
         home.showDragUi(false)
+        drawer.showDragUi(false)
     }
 
-    private fun hintFor(payload: DragPayload, target: Item?): String? = when {
-        payload.item !is AppItem -> null
-        target is AppItem && target != payload.item -> getString(R.string.hint_new_folder)
-        target is Folder || target is FolderLink -> getString(R.string.hint_add_folder)
-        else -> null
+    // only entries that belong at the drawer's top level can land there; a pinned shortcut does not
+    private fun landsInDrawer(payload: DragPayload): Boolean {
+        val source = payload.source
+        val fromDrawer = source is DrawerSlot || (source is FolderSlot && layout.isDrawerFolder(source.folderId))
+        return fromDrawer && (payload.item as? AppItem)?.let { apps[it.key]?.shortcut } == null
     }
+
+    // what landing on an item needs, in every view: an app can join any folder but the one it came from, and
+    // otherwise the two swap, which takes a place in this view to swap with (`swaps`)
+    private fun canLand(payload: DragPayload, target: Item, swaps: Boolean): Boolean {
+        val folder = layout.folderOf(target)
+        val own = folder != null && folder.id == (payload.source as? FolderSlot)?.folderId
+        return target != payload.item && !own && (swaps || (folder != null && payload.item is AppItem))
+    }
+
+    // the drawer's grid takes one listener rather than one per cell: it recycles cells during a scroll, and a
+    // recycled cell would miss the start of the drag
+    private val drawerDropListener = View.OnDragListener { _, ev ->
+        val payload = ev.localState as? DragPayload
+        if (payload == null || !landsInDrawer(payload)) return@OnDragListener false
+        val open = drawer.translationY == 0f
+        val lands = { target: Item -> canLand(payload, target, swaps = payload.source is DrawerSlot) }
+        when (ev.action) {
+            DragEvent.ACTION_DRAG_LOCATION -> if (open) drawer.hover(ev.x, ev.y, lands) else drawer.leaveDrag()
+            DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> {
+                drawer.leaveDrag()
+                if (ev.action == DragEvent.ACTION_DRAG_ENDED) endDrag()
+            }
+            DragEvent.ACTION_DROP -> {
+                drawer.leaveDrag()
+                if (open) drawer.dropAt(ev.x, ev.y, lands)?.let { (cell, where) -> cell.item?.let { dropInDrawer(payload, it, where) } }
+            }
+        }
+        true
+    }
+
+    // an app coming out of a drawer folder has no drawer position to swap with, so it goes beside the target
+    private fun dropInDrawer(payload: DragPayload, target: Item, where: Drop) {
+        val id = drawerId(target)
+        val moved = drawerId(payload.item)
+        val source = payload.source as? FolderSlot
+        commit(
+            when {
+                where == Drop.ONTO && target is Folder && payload.item is AppItem ->
+                    layout.moveToDrawerFolder(target.id, payload.item.key)
+                where == Drop.ONTO && source == null -> layout.swapInDrawer(naturalDrawer(), moved, id)
+                else -> {
+                    val lifted = source?.let { layout.removeFromFolder(it.folderId, it.key) } ?: layout
+                    lifted.moveInDrawer(naturalDrawer(lifted), moved, id, where == Drop.AFTER)
+                }
+            },
+        )
+    }
+
+    private fun hintFor(payload: DragPayload, target: Item?): String? =
+        if (payload.item is AppItem && (target is Folder || target is FolderLink)) getString(R.string.hint_add_folder) else null
 
     private val dropListener = View.OnDragListener { v, ev ->
         val cell = v as CellView
         val target = cell.slot
         val payload = ev.localState as? DragPayload
         if (payload == null || (target !is HomeSlot && target !is DockSlot)) return@OnDragListener false
+        val lands = { item: Item -> canLand(payload, item, swaps = payload.source is HomeSlot || payload.source is DockSlot) }
         when (ev.action) {
-            DragEvent.ACTION_DRAG_ENTERED -> {
-                cell.highlighted = true
-                home.showHint(hintFor(payload, cell.item))
+            DragEvent.ACTION_DRAG_LOCATION -> {
+                val where = cell.landing(ev.x, lands)
+                marks.show(cell, where)
+                home.showHint(if (where == Drop.ONTO) hintFor(payload, cell.item) else null)
             }
             DragEvent.ACTION_DRAG_EXITED -> {
-                cell.highlighted = false
+                marks.clear()
                 home.showHint(null)
             }
             DragEvent.ACTION_DROP -> {
-                cell.highlighted = false
-                commit(layout.drop(payload.source, payload.item, target, getString(R.string.folder_default)))
+                marks.clear()
+                commit(layout.drop(payload.source, payload.item, target, cell.landing(ev.x, lands)))
             }
             DragEvent.ACTION_DRAG_ENDED -> {
-                cell.highlighted = false
+                marks.clear()
                 endDrag()
             }
         }

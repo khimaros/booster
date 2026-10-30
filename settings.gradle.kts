@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "booster"
-include(":app", ":testpack")
+include(":app", ":testpack", ":testpin")

@@ -16,6 +16,9 @@ CALENDAR = "com.android.calendar/com.android.calendar.AllInOneActivity"
 SETTINGS = "com.android.settings/com.android.settings.Settings"
 DIALER = "com.android.dialer/com.android.dialer.main.impl.MainActivity"
 PACK_LABEL = "Booster Test Pack"
+TESTPIN_APK = "testpin/build/outputs/apk/debug/testpin-debug.apk"
+PINNED = "Pinned Page"
+PINNED_KEY = f"{d.TESTPIN}/shortcut:page"
 
 emulator = d.Emulator()
 
@@ -289,7 +292,25 @@ class LauncherTest(unittest.TestCase):
         d.find(desc="Clock", within="drawer_grid")
         self.assertNotEqual(d.find(rid="search").text, "cal")
 
+    def test_returning_from_an_app_finds_home_by_default(self):
+        self.open_drawer()
+        d.tap(d.find(rid="search"))
+        d.type_text("cal")
+        d.tap(d.find(desc="Calendar", within="drawer_grid"))
+        d.wait_resumed("com.android.calendar")
+        d.shell("input", "keyevent", "KEYCODE_HOME")
+        d.wait_resumed(d.PACKAGE)
+        d.absent(rid="search")
+        self.open_drawer()
+        self.assertNotEqual(d.find(rid="search").text, "cal")
+
     def test_returning_from_an_app_finds_the_drawer_as_it_was_left(self):
+        self.open_settings()
+        d.tap(d.find(text="remember drawer"))
+        d.choose("on", within="menu")
+        d.wait_layout(lambda l: l["settings"]["remember_drawer"] is True)
+        d.back()
+        d.absent(rid="sheet")
         self.open_drawer()
         d.tap(d.find(rid="search"))
         d.type_text("cal")
@@ -425,17 +446,101 @@ class LauncherTest(unittest.TestCase):
             "an open folder has no header",
         )
 
-    def test_drag_app_onto_app_creates_folder(self):
+    def test_dropping_an_app_on_another_swaps_them(self):
         clock = self.add_to_home("Clock")
         contacts = self.add_to_home("Contacts")
         d.drag(contacts, clock)
-        layout = d.wait_layout(lambda l: any(len(f["apps"]) == 2 for f in folders(l)))
-        self.assertEqual(sorted(folders(layout)[0]["apps"]), sorted([CLOCK, CONTACTS]))
+        layout = d.wait_layout(lambda l: l["pages"][0][0] == {"app": CONTACTS})
+        self.assertEqual(layout["pages"][0][1], {"app": CLOCK})
+        self.assertEqual(folders(layout), [], "dropping never makes a folder")
+
+    def test_dropping_between_home_apps_inserts_there(self):
+        clock = self.add_to_home("Clock")
+        self.add_to_home("Contacts")
+        calendar = self.add_to_home("Calendar")
+        d.drag(calendar, d.beside(clock, 0.9))
+        layout = d.wait_layout(lambda l: l["pages"][0][1] == {"app": CALENDAR})
+        self.assertEqual(
+            layout["pages"][0][:3],
+            [{"app": CLOCK}, {"app": CALENDAR}, {"app": CONTACTS}],
+        )
+
+    def test_dropping_between_dock_apps_inserts_there(self):
+        before = d.wait_layout(lambda l: any(l["dock"]))["dock"]
+        d.drag(
+            d.find(desc="Settings", within="dock"),
+            d.beside(d.find(desc="Phone", within="dock"), 0.9),
+        )
+        layout = d.wait_layout(lambda l: l["dock"][1] == {"app": SETTINGS})
+        self.assertEqual(
+            layout["dock"], [before[0], before[3], before[1], before[2], None]
+        )
+
+    def test_dropping_between_folder_apps_inserts_and_on_one_swaps(self):
+        folder = self.make_folder()
+        d.drag(self.add_to_home("Calendar"), folder)
+        d.wait_layout(lambda l: any(len(f["apps"]) == 3 for f in folders(l)))
+        d.tap(d.find(desc="folder", within="pager"))
+        d.drag(
+            d.find(desc="Calendar", within="folder_card"),
+            d.beside(d.find(desc="Clock", within="folder_card"), 0.9),
+        )
+        d.wait_layout(
+            lambda l: any(f["apps"] == [CLOCK, CALENDAR, CONTACTS] for f in folders(l))
+        )
+        d.drag(
+            d.find(desc="Contacts", within="folder_card"),
+            d.find(desc="Clock", within="folder_card"),
+        )
+        d.wait_layout(
+            lambda l: any(f["apps"] == [CONTACTS, CALENDAR, CLOCK] for f in folders(l))
+        )
+
+    def test_a_drawer_app_dropped_on_a_taken_slot_goes_beside_it(self):
+        clock = self.add_to_home("Clock")
+        self.open_drawer()
+        calendar = d.find(desc="Calendar", within="drawer_grid")
+        d.drag(calendar, clock, via=[d.find(rid="search").center])
+        d.wait_layout(
+            lambda l: (
+                home_items(l)
+                in (
+                    [{"app": CLOCK}, {"app": CALENDAR}],
+                    [{"app": CALENDAR}, {"app": CLOCK}],
+                )
+            )
+        )
+
+    def test_a_gap_between_two_entries_is_one_drop_area(self):
+        self.open_drawer()
+        cells = [n for n in d.find_all(within="drawer_grid") if n.desc]
+        cells.sort(key=lambda n: (n.bounds[1], n.bounds[0]))
+        left, right = cells[1], cells[2]
+        d.touch("DOWN", *cells[5].center)
+        time.sleep(d.LONG_PRESS_MS / 1000)
+        d.touch("MOVE", cells[5].center[0], cells[5].center[1] + 80)
+        marked = []
+        for point in (d.beside(left, 0.9), d.beside(right, 0.1)):
+            d.touch("MOVE", *point.center)
+            time.sleep(0.5)
+            marked.append(
+                [n.desc for n in d.find_all(within="drawer_grid") if n.selected]
+            )
+        d.touch("UP", *d.beside(right, 0.1).center)
+        self.assertEqual(marked, [[right.desc], [right.desc]])
+
+    def group(self, first, second, name="folder"):
+        """two home apps into a new folder, the way a person now has to: through the menus."""
+        self.menu(first, "add to folder")
+        d.choose("new folder")
+        d.find(rid="sheet_name")
+        d.choose("done")
+        self.menu(second, "add to folder")
+        d.choose(name)
 
     def make_folder(self):
         """clock and contacts in one home folder, in that order; returns the folder node."""
-        clock = self.add_to_home("Clock")
-        d.drag(self.add_to_home("Contacts"), clock)
+        self.group(self.add_to_home("Clock"), self.add_to_home("Contacts"))
         d.wait_layout(lambda l: any(f["apps"] == [CLOCK, CONTACTS] for f in folders(l)))
         return d.find(desc="folder", within="pager")
 
@@ -609,6 +714,7 @@ class LauncherTest(unittest.TestCase):
         d.choose("new folder")
         self.rename_in_sheet("plan")
         d.wait_layout(lambda l: l["drawer_folders"])
+        search = d.find(rid="search")
         d.tap(d.find(desc="plan", within="drawer_grid"))
         calendar = d.find(desc="Calendar", within="folder_card")
         cell = calendar.width
@@ -617,9 +723,220 @@ class LauncherTest(unittest.TestCase):
         first = d.Node(
             "", "", "", (left, pager.bounds[1], left + cell, pager.bounds[1] + cell)
         )
-        d.drag(calendar, first)
+        d.drag(calendar, first, via=[search.center])
         layout = d.wait_layout(lambda l: {"app": CALENDAR} in home_items(l))
         self.assertEqual(layout["drawer_folders"][0]["apps"], [CALENDAR])
+
+    def drawer_labels(self):
+        """the drawer's cells in reading order."""
+        cells = d.find_all(within="drawer_grid")
+        cells = [n for n in cells if n.desc]
+        return [n.desc for n in sorted(cells, key=lambda n: (n.bounds[1], n.bounds[0]))]
+
+    def test_dragging_between_drawer_apps_rearranges_them_for_good(self):
+        self.open_drawer()
+        self.assertLess(
+            self.drawer_labels().index("Calendar"), self.drawer_labels().index("Clock")
+        )
+        clock = d.find(desc="Clock", within="drawer_grid")
+        d.drag(clock, d.beside(d.find(desc="Calendar", within="drawer_grid"), 0.1))
+        layout = d.wait_layout(lambda l: l["drawer_order"])
+        order = layout["drawer_order"]
+        self.assertEqual(order.index(CLOCK), order.index(CALENDAR) - 1)
+        self.assertEqual(d.find(rid="drawer").bounds[1], 0, "the drawer stays open")
+        d.shell("am", "force-stop", d.PACKAGE)
+        d.go_home()
+        d.find(desc="Phone", within="dock")
+        self.open_drawer()
+        labels = self.drawer_labels()
+        self.assertEqual(labels.index("Clock"), labels.index("Calendar") - 1)
+
+    def test_a_drawer_folder_rearranges_among_the_apps(self):
+        self.make_drawer_folder("plan")
+        self.assertEqual(self.drawer_labels()[0], "plan", "folders start out first")
+        folder = d.find(desc="plan", within="drawer_grid")
+        d.drag(folder, d.beside(d.find(desc="Clock", within="drawer_grid"), 0.9))
+        d.wait_layout(lambda l: l["drawer_order"])
+        labels = self.drawer_labels()
+        self.assertEqual(labels.index("plan"), labels.index("Clock") + 1)
+
+    def test_dropping_on_the_middle_of_a_drawer_app_swaps_them(self):
+        self.open_drawer()
+        before = self.drawer_labels()
+        d.drag(
+            d.find(desc="Calendar", within="drawer_grid"),
+            d.find(desc="Contacts", within="drawer_grid"),
+        )
+        layout = d.wait_layout(lambda l: l["drawer_order"])
+        self.assertEqual(layout["drawer_folders"], [], "dropping never makes a folder")
+        after = self.drawer_labels()
+        self.assertEqual(after.index("Calendar"), before.index("Contacts"))
+        self.assertEqual(after.index("Contacts"), before.index("Calendar"))
+
+    def test_dropping_an_app_on_a_drawer_folder_adds_it(self):
+        self.make_drawer_folder("plan")
+        d.drag(
+            d.find(desc="Clock", within="drawer_grid"),
+            d.find(desc="plan", within="drawer_grid"),
+        )
+        d.wait_layout(lambda l: l["drawer_folders"][0]["apps"] == [CALENDAR, CLOCK])
+        d.absent(desc="Clock", within="drawer_grid")
+
+    def test_dragging_an_app_out_of_a_drawer_folder_lands_in_the_drawer(self):
+        self.make_drawer_folder("plan")
+        self.menu(d.find(desc="Clock", within="drawer_grid"), "add to folder")
+        d.choose("plan")
+        d.wait_layout(lambda l: len(l["drawer_folders"][0]["apps"]) == 2)
+        contacts = d.find(desc="Contacts", within="drawer_grid")
+        d.tap(d.find(desc="plan", within="drawer_grid"))
+        d.drag(d.find(desc="Clock", within="folder_card"), d.beside(contacts, 0.1))
+        layout = d.wait_layout(lambda l: not l["drawer_folders"])
+        order = layout["drawer_order"]
+        self.assertEqual(order.index(CLOCK), order.index(CONTACTS) - 1)
+        d.absent(rid="folder_card")
+        self.assertEqual(d.find(rid="drawer").bounds[1], 0, "the drawer stays open")
+        d.find(desc="Clock", within="drawer_grid")
+
+    def test_dragging_to_the_search_bar_reveals_home(self):
+        pager = d.find(rid="pager")
+        search = self.open_drawer()
+        calendar = d.find(desc="Calendar", within="drawer_grid")
+        d.touch("DOWN", *calendar.center)
+        time.sleep(d.LONG_PRESS_MS / 1000)
+        d.touch("MOVE", calendar.center[0], calendar.center[1] + 80)
+        d.find(text="add to home", rid="drawer_zone")
+        self.assertEqual(d.find(rid="drawer").bounds[1], 0, "still in the drawer")
+        for x, y in (search.center, (pager.center[0], pager.bounds[1] + 100)):
+            d.touch("MOVE", x, y)
+            time.sleep(0.3)
+        d.touch("UP", pager.center[0], pager.bounds[1] + 100)
+        d.wait_layout(lambda l: {"app": CALENDAR} in home_items(l))
+        d.absent(rid="search")
+
+    def test_a_drawer_folder_dragged_to_home_becomes_a_link(self):
+        folder_id = self.make_drawer_folder("plan")
+        pager = d.find(rid="pager")
+        d.drag(
+            d.find(desc="plan", within="drawer_grid"),
+            d.Node("", "", "", (*pager.bounds[:2], *pager.center)),
+            via=[d.find(rid="search").center],
+        )
+        d.wait_layout(lambda l: {"folder_link": folder_id} in home_items(l))
+
+    def test_a_drawer_drag_scrolls_at_the_edges(self):
+        d.shell("wm", "size", "1080x1000")
+        self.addCleanup(d.shell, "wm", "size", "reset")
+        d.reset_launcher()
+        d.find(desc="Phone", within="dock")
+        self.open_drawer()
+        second_row = self.drawer_labels()[4]
+        top = d.find(desc=second_row, within="drawer_grid").bounds[1]
+        calendar = d.find(desc="Calendar", within="drawer_grid")
+        search = d.find(rid="search")
+        d.touch("DOWN", *calendar.center)
+        time.sleep(d.LONG_PRESS_MS / 1000)
+        x = calendar.center[0]
+        d.touch("MOVE", x, calendar.center[1] + 80)
+        d.touch("MOVE", x, search.bounds[1] - 20)
+        time.sleep(2)
+        moved = d.find_all(desc=second_row, within="drawer_grid")
+        d.touch("MOVE", x, search.bounds[1] - 200)
+        d.touch("UP", x, search.bounds[1] - 200)
+        self.assertTrue(
+            not moved or moved[0].bounds[1] < top,
+            "holding near the bottom scrolls the grid",
+        )
+
+    def test_drawer_order_can_return_to_sorted_by_name(self):
+        self.open_drawer()
+        clock = d.find(desc="Clock", within="drawer_grid")
+        d.drag(clock, d.beside(d.find(desc="Calendar", within="drawer_grid"), 0.1))
+        d.wait_layout(lambda l: l["drawer_order"])
+        d.back()
+        d.absent(rid="search")
+        self.open_settings()
+        d.tap(d.find(text="drawer order"))
+        self.assertTrue(d.find(text="custom", within="menu").selected)
+        d.choose("by name", within="menu")
+        d.wait_layout(lambda l: not l["drawer_order"])
+        d.back()
+        d.absent(rid="sheet")
+        self.open_drawer()
+        labels = self.drawer_labels()
+        self.assertLess(labels.index("Calendar"), labels.index("Clock"))
+
+    def test_drawer_entries_move_from_their_menu(self):
+        self.open_drawer()
+        self.menu(d.find(desc="Clock", within="drawer_grid"), "move in drawer")
+        d.choose("to the top")
+        d.wait_layout(lambda l: l["drawer_order"])
+        self.assertEqual(self.drawer_labels()[0], "Clock")
+
+    def request_pin(self):
+        """a foreground app asks to pin a shortcut, as a browser's add to home does."""
+        d.install(os.environ.get("BOOSTER_TESTPIN_APK", TESTPIN_APK))
+        self.addCleanup(d.uninstall, d.TESTPIN)
+        d.shell(
+            "am",
+            "start",
+            "-W",
+            "-n",
+            f"{d.TESTPIN}/.PinActivity",
+            "--ez",
+            "pin",
+            "true",
+        )
+        d.find(text=PINNED, rid="pin_name")
+
+    def pin(self):
+        self.request_pin()
+        d.choose("add to home")
+        d.wait_layout(lambda l: {"app": PINNED_KEY} in home_items(l))
+        d.go_home()
+        return d.find(desc=PINNED, within="pager")
+
+    def test_add_to_home_from_an_app_places_a_shortcut_that_opens_it(self):
+        self.request_pin()
+        d.choose("add to home")
+        d.wait_layout(lambda l: {"app": PINNED_KEY} in home_items(l))
+        d.wait_resumed(d.TESTPIN)
+        d.go_home()
+        d.wait_resumed(d.PACKAGE)
+        d.tap(d.find(desc=PINNED, within="pager"))
+        d.wait_resumed(d.TESTPIN)
+
+    def test_a_declined_add_to_home_places_nothing(self):
+        self.request_pin()
+        d.choose("cancel")
+        d.wait_resumed(d.TESTPIN)
+        d.go_home()
+        d.find(desc="Phone", within="dock")
+        d.absent(desc=PINNED, within="pager")
+        self.assertNotIn({"app": PINNED_KEY}, home_items(d.layout_json()))
+
+    def test_a_removed_shortcut_stays_gone(self):
+        self.menu(self.pin(), "remove from home")
+        d.absent(desc=PINNED, within="pager")
+        d.shell("am", "force-stop", d.PACKAGE)
+        d.go_home()
+        d.find(desc="Phone", within="dock")
+        time.sleep(1)
+        self.assertNotIn({"app": PINNED_KEY}, home_items(d.layout_json()))
+
+    def test_shortcuts_rename_and_offer_no_uninstall(self):
+        shortcut = self.pin()
+        d.long_press(shortcut)
+        d.find(text="edit icon & name")
+        d.absent(text="uninstall", timeout=1)
+        d.choose("edit icon & name")
+        self.rename_in_sheet("page")
+        d.find(desc="page", within="pager")
+
+    def test_a_shortcut_leaves_with_its_app(self):
+        self.pin()
+        d.uninstall(d.TESTPIN)
+        d.absent(desc=PINNED, within="pager")
+        d.wait_layout(lambda l: {"app": PINNED_KEY} not in home_items(l))
 
     def make_drawer_folder(self, name, label="Calendar"):
         self.open_drawer()
@@ -701,10 +1018,15 @@ class LauncherTest(unittest.TestCase):
         d.find(desc="Clock", within="drawer_grid")
 
     def test_folder_names_stay_unique(self):
-        for first, second in (("Clock", "Contacts"), ("Calendar", "Gallery")):
-            target = self.add_to_home(first)
-            d.drag(self.add_to_home(second), target)
-        layout = d.wait_layout(lambda l: len(folders(l)) == 2)
+        self.group(self.add_to_home("Clock"), self.add_to_home("Contacts"))
+        self.group(
+            self.add_to_home("Calendar"), self.add_to_home("Gallery"), "folder 2"
+        )
+        layout = d.wait_layout(
+            lambda l: (
+                len(folders(l)) == 2 and all(len(f["apps"]) == 2 for f in folders(l))
+            )
+        )
         names = sorted(f["name"] for f in folders(layout))
         self.assertEqual(
             names, ["folder", "folder 2"], "new folders get distinct names"
@@ -732,7 +1054,7 @@ class LauncherTest(unittest.TestCase):
         d.back()
         d.find(desc="tock", within="pager")
         contacts = self.add_to_home("Contacts")
-        d.drag(contacts, d.find(desc="tock", within="pager"))
+        self.group(d.find(desc="tock", within="pager"), contacts)
         d.tap(d.find(desc="folder", within="pager"))
         self.menu(d.find(desc="tock", within="folder_card"), "edit icon & name")
         self.rename_in_sheet("tack")
@@ -765,10 +1087,7 @@ class LauncherTest(unittest.TestCase):
         )
 
     def test_system_icons_and_folder_custom_icon(self):
-        self.add_to_home("Clock")
-        contacts = self.add_to_home("Contacts")
-        d.drag(contacts, d.find(desc="Clock", within="pager"))
-        folder = d.find(desc="folder", within="pager")
+        folder = self.make_folder()
         self.menu(folder, "edit folder")
         d.tap(d.find(rid="sheet_icon"))
         d.tap(d.find(text="System"))

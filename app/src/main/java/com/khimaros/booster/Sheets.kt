@@ -349,6 +349,14 @@ fun LauncherActivity.openSettings() {
     ) { on -> commit(layout.withSettings { it.copy(wallpaper = on) }) }
     onOff(R.string.drawer_animation, { layout.settings.animateDrawer }) { s, on -> s.copy(animateDrawer = on) }
     onOff(R.string.hide_placed, { layout.settings.hidePlaced }) { s, on -> s.copy(hidePlaced = on) }
+    onOff(R.string.remember_drawer, { layout.settings.rememberDrawer }) { s, on -> s.copy(rememberDrawer = on) }
+    // a custom order comes from dragging, so the only choice to offer is going back to names
+    choice(
+        R.string.drawer_order,
+        { listOfNotNull(true.takeIf { layout.drawerOrder.isNotEmpty() }, false) },
+        { layout.drawerOrder.isNotEmpty() },
+        { getString(if (it) R.string.drawer_order_custom else R.string.drawer_order_name) },
+    ) { custom -> if (!custom) commit(layout.copy(drawerOrder = emptyList())) }
     row(R.string.colors, { getString(if (palette.isDynamic) R.string.colors_dynamic else R.string.colors_fixed) }, null)
     header(R.string.section_layout)
     // null is auto: as many rows as fit. fixed counts never exceed that.

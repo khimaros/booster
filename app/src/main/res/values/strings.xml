@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">booster</string>
     <string name="search_apps">search apps</string>
     <string name="folder_default">folder</string>
@@ -13,6 +13,9 @@
     <string name="remove_home">remove from home</string>
     <string name="remove_dock">remove from dock</string>
     <string name="remove_from_folder">remove from folder</string>
+    <string name="move_in_drawer">move in drawer</string>
+    <string name="move_top">to the top</string>
+    <string name="move_bottom">to the bottom</string>
     <string name="hide">hide</string>
     <string name="unhide">unhide</string>
     <string name="app_info">app info</string>
@@ -33,11 +36,11 @@
     </plurals>
     <string name="reset">reset</string>
     <string name="done">done</string>
+    <string name="cancel" tools:ignore="ButtonCase">cancel</string>
 
     <string name="zone_remove">remove</string>
     <string name="zone_edit">edit</string>
     <string name="zone_info">app info</string>
-    <string name="hint_new_folder">release to create folder</string>
     <string name="hint_add_folder">release to add to folder</string>
 
     <string name="system_icons">System</string>
@@ -51,6 +54,10 @@
     <string name="show_labels">show labels</string>
     <string name="drawer_animation">drawer animation</string>
     <string name="hide_placed">hide home apps from drawer</string>
+    <string name="remember_drawer">remember drawer</string>
+    <string name="drawer_order">drawer order</string>
+    <string name="drawer_order_name">by name</string>
+    <string name="drawer_order_custom">custom</string>
     <string name="folder_name_taken">a folder named %1$s already exists</string>
     <string name="background_black">black</string>
     <string name="background_wallpaper">wallpaper</string>

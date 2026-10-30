@@ -9,8 +9,11 @@ lightweight android launcher where every icon and name is customizable.
 
 - paged home grid (4 columns; as many rows as fit, or a fixed 3 to 12) and a
   dock (3 to 6 slots).
-- an app drawer as one plain grid, with the search bar at the bottom. apps
-  can be hidden from the grid and stay findable by search.
+- an app drawer as one plain grid, with the search bar at the bottom. it
+  sorts by name until you rearrange it by dragging. apps can be hidden from
+  the grid and stay findable by search.
+- "add to home" from browsers and other apps. shortcuts behave like apps on
+  home, in the dock and in folders.
 - folders on the home grid, in the dock, and in the drawer. an open folder
   is a centered card holding a near-square grid.
 - custom icons for apps and folders from any installed icon pack
@@ -18,9 +21,10 @@ lightweight android launcher where every icon and name is customizable.
   ("System").
 - custom names for apps and folders.
 - one global icon pack, with per-item overrides on top.
-- drag an app onto another to make a folder, onto a folder to add it, or onto
-  the remove / edit / app info targets above the dock. every drag action is
-  also in the long-press menus.
+- one way of dragging everywhere: onto an item to swap them, onto a folder to
+  add an app, between two items to insert, or onto the remove / edit / app
+  info targets above the dock. new folders come from "add to folder" in the
+  long-press menu.
 - android 12+ dynamic colors for accents and sheets; black background, with
   the system wallpaper as an option.
 - export and import the whole layout as json.
@@ -34,13 +38,14 @@ lightweight android launcher where every icon and name is customizable.
 | long press | empty home space | background, settings, add / remove page |
 | swipe up | anywhere on home | open the drawer; it follows your finger |
 | swipe down | drawer at top, any sheet | close it; it follows your finger |
-| drag within | an open folder | reorder its apps |
+| drag within | home, dock, drawer, an open folder | rearrange apps and folders |
+| drag to search bar | the drawer | close the drawer to drop on home or the dock |
 | swipe sideways | home | change page |
 | back or home | anywhere | close the top sheet, menu, folder or drawer |
 
-launching an app from the drawer leaves it open, so going home returns you to
-the drawer as you left it; press home again to close it. the page line above
-the dock appears only while you switch pages.
+going home from an app returns you to the home screen. with "remember drawer"
+on, it returns you to the drawer as you left it; press home again to close it.
+the page line above the dock appears only while you switch pages.
 
 to set an icon: long press an app or folder, choose "edit icon & name", then
 tap the icon. pick from an installed pack, or from "System" for another
@@ -51,8 +56,12 @@ settings", "icon pack", and pick from the popup. the same settings turn the
 drawer animation off and can hide apps that are already on home or the dock
 from the drawer ("hide home apps from drawer").
 
-dragging an app out of a drawer folder puts a shortcut on home or the dock and
-leaves the folder as it was. folder names are unique.
+dragging an app out of a drawer folder drops it in the drawer; carried on to
+the search bar and then to home or the dock, it places a copy there and stays
+in the folder. "drawer order" in settings returns the drawer to sorting by
+name. folder names are unique.
+
+"add to home" in another app works while booster is the default home app.
 
 booster also has an ordinary app icon, so you can try it from your current
 home screen before making it the default home app.

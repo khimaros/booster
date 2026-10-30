@@ -24,11 +24,13 @@ import android.widget.GridView
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlin.math.abs
+import kotlin.math.hypot
 
 private const val EDGE_FLIP_MS = 600L
 private const val SETTLE_MS = 280L
 private const val MIN_SETTLE_MS = 120L
 private const val MAX_SETTLE_MS = 450L
+private const val EDGE_SCROLL_MS = 16L
 
 // a decelerating settle starts at twice its average speed, so this duration makes it begin at the
 // finger's release speed and coast to a stop. without a fling toward the target it uses a calm default.
@@ -131,8 +133,9 @@ class HomeView(ctx: Context, private val scale: Scale, private val palette: Pale
         if (!dragging) hint.visibility = GONE
     }
 
+    // called on every drag move, so only a change touches the view
     fun showHint(text: String?) {
-        hint.text = text ?: ""
+        if (hint.text.toString() != text.orEmpty()) hint.text = text.orEmpty()
         hint.visibility = if (text == null) GONE else VISIBLE
     }
 
@@ -242,11 +245,30 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         imeOptions = EditorInfo.IME_ACTION_GO
     }
+    // takes the search bar's place during a drag; hovering it reveals home
+    val zoneHome = ctx.chip(scale, palette, ctx.getString(R.string.add_home)).apply {
+        id = R.id.drawer_zone
+        background = rounded(palette.surfaceHi, scale.row / 2f)
+        visibility = GONE
+    }
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
     private val minFling = ViewConfiguration.get(ctx).scaledMinimumFlingVelocity.toFloat()
     private var downX = 0f
     private var downY = 0f
     private var closing = false
+    private val marks = DropMarks()
+    private var hoverX = 0f
+    private var hoverY = 0f
+    private var scrollDir = 0
+    private var canLand: (Item) -> Boolean = { false }
+    private val edgeScroll: Runnable = object : Runnable {
+        override fun run() {
+            if (scrollDir == 0) return
+            grid.scrollListBy(scrollDir * scale.gap)
+            mark()
+            postDelayed(this, EDGE_SCROLL_MS)
+        }
+    }
     private var velocity: VelocityTracker? = null
     private val decelerate = DecelerateInterpolator()
     // unset until the first setInsets
@@ -271,6 +293,7 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         addView(statusBand, LayoutParams(MATCH_PARENT, 0, Gravity.TOP))
         addView(searchBand, LayoutParams(MATCH_PARENT, 0, Gravity.BOTTOM))
         addView(search, LayoutParams(MATCH_PARENT, scale.row, Gravity.BOTTOM))
+        addView(zoneHome, LayoutParams(MATCH_PARENT, scale.row, Gravity.BOTTOM))
         isClickable = true
         setInsets(0, 0)
     }
@@ -280,10 +303,12 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         if (top == topInset && bottom == bottomInset) return
         topInset = top
         bottomInset = bottom
-        (search.layoutParams as LayoutParams).apply {
-            leftMargin = scale.gutter
-            rightMargin = scale.gutter
-            bottomMargin = bottom + scale.gutter
+        listOf(search, zoneHome).forEach {
+            (it.layoutParams as LayoutParams).apply {
+                leftMargin = scale.gutter
+                rightMargin = scale.gutter
+                bottomMargin = bottom + scale.gutter
+            }
         }
         statusBand.layoutParams = statusBand.layoutParams.apply { height = top }
         searchBand.layoutParams = searchBand.layoutParams.apply { height = bottom + scale.row + 2 * scale.gutter }
@@ -313,6 +338,50 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         grid.setPadding(side, top + maxOf(0, free), side, bottom)
     }
 
+    fun showDragUi(dragging: Boolean) {
+        zoneHome.visibility = if (dragging) VISIBLE else GONE
+        if (!dragging) leaveDrag()
+    }
+
+    // the entry under a drag and how it lands on it. the grid scrolls cells past a single listener, so it
+    // finds the nearest cell itself: gaps between rows go beside it, and below the last cell goes last.
+    fun dropAt(x: Float, y: Float, canLand: (Item) -> Boolean): Pair<CellView, Drop>? {
+        val cells = (0 until grid.childCount).map { grid.getChildAt(it) as CellView }
+        val last = cells.lastOrNull() ?: return null
+        if (y > last.bottom) return last to Drop.AFTER
+        val cell = cells.minBy { hypot(it.left + it.width / 2f - x, it.top + it.height / 2f - y) }
+        val onRow = y >= cell.top && y <= cell.bottom
+        return cell to cell.landing(x - cell.left) { onRow && canLand(it) }
+    }
+
+    // marks where a drag would land and scrolls while it hovers the top or bottom edge of the grid
+    fun hover(x: Float, y: Float, canLand: (Item) -> Boolean) {
+        hoverX = x
+        hoverY = y
+        this.canLand = canLand
+        mark()
+        val dir = when {
+            y < grid.paddingTop + scale.gutter -> -1
+            y > grid.height - grid.paddingBottom - scale.gutter -> 1
+            else -> 0
+        }
+        if (dir == scrollDir) return
+        scrollDir = dir
+        removeCallbacks(edgeScroll)
+        if (dir != 0) post(edgeScroll)
+    }
+
+    private fun mark() {
+        val (cell, drop) = dropAt(hoverX, hoverY, canLand) ?: return
+        marks.show(cell, drop)
+    }
+
+    fun leaveDrag() {
+        scrollDir = 0
+        removeCallbacks(edgeScroll)
+        marks.clear()
+    }
+
     fun setBackdrop(wallpaper: Boolean) = setBackgroundColor(if (wallpaper) Color.argb(0xcc, 0, 0, 0) else Color.BLACK)
 
     // with animation off the drawer just appears and disappears
@@ -321,6 +390,14 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
     val isOpen get() = visibility == VISIBLE
 
     fun close() = settle(open = false)
+
+    // out of sight already, so there is nothing to animate
+    fun closeNow() {
+        val wasAnimated = animated
+        animated = false
+        settle(open = false)
+        animated = wasAnimated
+    }
 
     // places the drawer's top edge `distance` px above the bottom of the screen, under the finger
     fun follow(distance: Float) {

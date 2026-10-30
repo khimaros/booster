@@ -14,7 +14,8 @@ Sheets.kt            edit sheet, icon picker sheet, settings sheet
 CellView             one cell, drawn directly: icon, label, badge, highlight
 Model.kt             immutable Layout and pure functions that change it
 Json.kt, Store.kt    layout <-> json, atomic file persistence
-Apps.kt              launchable apps via LauncherApps, first-run dock
+PinActivity          confirms another app's request to pin a shortcut
+Apps.kt              launchable apps and pinned shortcuts, first-run dock
 IconPacks.kt         icon pack discovery and appfilter.xml / drawable.xml parsing
 Icons.kt             icon resolution, lru cache, background loading
 Scale.kt, Palette.kt golden ratio scale, dynamic colors
@@ -40,6 +41,23 @@ and the long-press menus share one implementation (`Layout.drop`,
 folders: a home or dock folder left with one app collapses into that app; a
 drawer folder left with one app dissolves back into the drawer. apps in a
 drawer folder are hidden from the drawer's top level but still searchable.
+
+the drawer's order is `Layout.drawerOrder`, app keys and folder ids. empty
+means the natural order, folders then apps, each by name. `Layout.arranged`
+merges it with the entries that exist now, so stale ids drop out and new apps
+join at the end; hidden entries keep their place for when they return.
+
+pinned shortcuts: the system owns which shortcuts are pinned to the default
+launcher. `PinActivity` handles `CONFIRM_PIN_SHORTCUT`, shows a sheet over the
+requesting app and calls `PinItemRequest.accept()`; it never touches the
+layout, which may live in an activity that is not running. instead
+`LauncherApps.Callback.onShortcutsChanged`, and every load, reconciles:
+a pinned shortcut the layout does not know yet goes to the first free home
+slot (`placeShortcuts`), and `commit` unpins any that left the layout, or
+they would return as new. a shortcut is an `AppItem` keyed
+`package/shortcut:id` and an `AppInfo` with `shortcut` set, so folders,
+overrides, the edit sheet and uninstall pruning need no special cases. only
+`appList` (the drawer) leaves them out.
 
 ## icons
 
@@ -85,15 +103,29 @@ fixed fallback. the background is black unless the wallpaper option is on.
 - `PageLine` sits in the gutter between the grid and the dock, so it costs
   the grid no space. it follows `Pager.onScrolled`, stays up while a finger
   pages, and fades out shortly after paging stops.
-- dragging from an open folder keeps the card open, and the drawer under a
-  drawer folder: cells in it reorder (`Layout.moveInFolder`). the card itself
-  accepts the drag, so its padding and row gaps count as inside. leaving the
-  card dismisses it (and closes the drawer) so the app can be dropped on home
-  or the dock.
+- every view shares one set of drag rules. `CellView.landing` turns a point
+  into a `Drop`: the outer quarters of a cell go beside it, the middle lands
+  on it (`canLand` decides if it may), and an empty cell takes the drag.
+  `DropMarks` draws the result, always marking a gap on the cell after it, so
+  a gap is one area with one bar however it is approached. `Layout.drop`,
+  `dropInFolder` and the drawer's order functions then apply it. home and dock
+  rows have fixed slots, so `inserted` makes room by closing a gap: the one the
+  item left, or else the nearest.
+- dragging from an open folder keeps the card open, so its cells can be
+  rearranged (`Layout.dropInFolder`). the card itself accepts the drag, so its padding
+  and row gaps count as inside. leaving the card dismisses it, revealing
+  whatever is beneath: home, or the drawer for a drawer folder.
+- a drag in the drawer stays in the drawer, unless it started from search
+  results. the `GridView` holds one drag listener, because cells it recycles
+  during a scroll would miss the drag's start. `DrawerView.dropAt` turns a
+  point into an entry and a `Drop`. the rest follows the shared rules below.
+  `zoneHome` covers the search bar during the drag; entering it closes the
+  drawer, so the rest of the drag lands on home cells, which had the drag
+  from its start because `startDrag` always shows the home drop targets.
 - `onNewIntent` treats home as "already home" only with window focus and
-  without `FLAG_ACTIVITY_BROUGHT_TO_FRONT`, as aosp launcher3 does: returning
-  from an app keeps the drawer, its search and scroll as they were; pressing
-  home again closes it.
+  without `FLAG_ACTIVITY_BROUGHT_TO_FRONT`, as aosp launcher3 does, so
+  returning from an app never counts as a press. after leaving for an app,
+  `onResume` closes an open drawer unless `rememberDrawer` is on.
 - settings with a few values open a menu of all of them, the current one an
   accent pill (`MenuEntry.selected`).
 - long press shows a menu and arms a drag; moving past the touch slop
@@ -108,4 +140,5 @@ own adb server (port 5056, pinned to a sentinel serial so it never claims
 usb devices). identity is asserted by avd name before use, an advisory flock
 guards concurrent runs, and only an emulator the run booted is shut down.
 the suite reads the saved layout through `run-as` to check effects, and uses
-`testpack/`, a minimal adw-format icon pack, as the icon pack fixture.
+`testpack/`, a minimal adw-format icon pack, as the icon pack fixture, and
+`testpin/`, a small app that requests a pinned shortcut like a browser does.

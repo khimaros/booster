@@ -8,6 +8,8 @@
     <item name="zones" type="id" />
     <item name="drawer" type="id" />
     <item name="drawer_grid" type="id" />
+    <item name="drawer_zone" type="id" />
+    <item name="pin_name" type="id" />
     <item name="search" type="id" />
     <item name="search_band" type="id" />
     <item name="status_band" type="id" />
