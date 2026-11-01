@@ -20,14 +20,16 @@ lightweight android launcher where every icon and name is customizable.
   (adw / nova / go format, including arcticons) or from any other app
   ("System").
 - custom names for apps and folders.
-- one global icon pack, with per-item overrides on top.
+- one global icon pack, with per-item overrides on top. custom icons follow
+  the pack by name, or fall back to the matching app's own icon.
 - one way of dragging everywhere: onto an item to swap them, onto a folder to
   add an app, between two items to insert, or onto the remove / edit / app
   info targets above the dock. new folders come from "add to folder" in the
   long-press menu.
 - android 12+ dynamic colors for accents and sheets; black background, with
   the system wallpaper as an option.
-- export and import the whole layout as json.
+- export and import the whole layout as json, or start from the default
+  layout with "import defaults" in settings.
 
 ## using it
 

@@ -41,9 +41,11 @@ TESTPACK = "com.khimaros.booster.testpack"
 TESTPIN = "com.khimaros.booster.testpin"
 BOOT_TIMEOUT = 300
 UI_TIMEOUT = 10
+DUMP_TIMEOUT = 30
 LONG_PRESS_MS = 900
 DRAG_STEPS = 8
 DRAG_SETTLE_MS = 400
+ICON_SAMPLE_RADIUS = 40
 
 
 def sdk_root():
@@ -351,14 +353,27 @@ def wait_layout(predicate, timeout=UI_TIMEOUT):
 
 def dump():
     """the current ui hierarchy. uiautomator occasionally refuses for a few seconds; keep asking."""
-    deadline = time.time() + UI_TIMEOUT
+    deadline = time.time() + DUMP_TIMEOUT
+    out = ""
     while time.time() < deadline:
-        out = shell("uiautomator", "dump", "/sdcard/ui.xml", check=False)
+        result = run(
+            ADB,
+            "-P",
+            ADB_PORT,
+            "-s",
+            SERIAL,
+            "shell",
+            "uiautomator",
+            "dump",
+            "/sdcard/ui.xml",
+            check=False,
+        )
+        out = result.stdout + result.stderr
         if "dumped to" in out:
             xml = adb("exec-out", "cat", "/sdcard/ui.xml")
             return parse(xml)
         time.sleep(0.5)
-    raise RuntimeError("uiautomator dump never succeeded")
+    raise RuntimeError(f"uiautomator dump never succeeded: {out!r}; {evidence()}")
 
 
 def parse(xml):
@@ -403,16 +418,34 @@ def evidence():
     return f"{path}.png"
 
 
-def pixel(x, y):
-    """the rgb on screen at a point, from a raw screencap: a 16 byte header, then 4 bytes a pixel."""
-    raw = subprocess.run(
+def screencap():
+    """the raw screen: a 16 byte header, then 4 bytes a pixel."""
+    return subprocess.run(
         [ADB, "-P", ADB_PORT, "-s", SERIAL, "exec-out", "screencap"],
         capture_output=True,
         check=True,
     ).stdout
+
+
+def pixel(x, y):
+    """the rgb on screen at a point."""
+    raw = screencap()
     width = int.from_bytes(raw[:4], "little")
     at = 16 + (y * width + x) * 4
     return tuple(raw[at : at + 3])
+
+
+def icon_pixels(cell, radius=ICON_SAMPLE_RADIUS):
+    """the middle of a cell's icon, which sits above its label, to compare with another cell's."""
+    raw = screencap()
+    width = int.from_bytes(raw[:4], "little")
+    x = cell.center[0]
+    middle = cell.bounds[1] + (cell.bounds[3] - cell.bounds[1]) * 2 // 5
+    rows = range(middle - radius, middle + radius)
+    return [
+        raw[16 + (y * width + x - radius) * 4 : 16 + (y * width + x + radius) * 4]
+        for y in rows
+    ]
 
 
 def rid_of(name):

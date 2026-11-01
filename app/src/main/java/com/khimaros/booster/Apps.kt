@@ -63,6 +63,18 @@ fun shortcutIcon(ctx: Context, shortcut: ShortcutInfo, density: Int): Drawable {
 fun pinShortcuts(ctx: Context, pkg: String, ids: List<String>) =
     ctx.getSystemService(LauncherApps::class.java).pinShortcuts(pkg, ids, Process.myUserHandle())
 
+private fun normalized(text: String) = text.lowercase().filter { it.isLetterOrDigit() }
+
+// the app an icon name stands for ("google_maps", "termux"): by label, then label prefix, then package
+fun matchingApp(apps: Collection<AppInfo>, iconName: String): AppInfo? {
+    val name = normalized(iconName)
+    val launchable = apps.filter { it.info != null }
+    if (name.isEmpty()) return null
+    return launchable.firstOrNull { normalized(it.label) == name }
+        ?: launchable.firstOrNull { normalized(it.label).startsWith(name) }
+        ?: launchable.firstOrNull { name in normalized(it.pkg) }
+}
+
 // the system's default apps for the dock, matched to launchable activities
 fun defaultDockKeys(ctx: Context, apps: List<AppInfo>): List<String> = DEFAULT_DOCK_INTENTS.mapNotNull { intent ->
     val pkg = ctx.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName

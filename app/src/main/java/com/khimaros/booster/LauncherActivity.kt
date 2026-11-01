@@ -204,6 +204,7 @@ class LauncherActivity : Activity() {
         appList = list
         apps = (list + pinned).associateBy { it.key }
         packs = found
+        icons.installed = found.map { it.pkg }
     }
 
     private fun reloadApps(removed: String? = null, changed: String? = null) {
@@ -780,6 +781,23 @@ class LauncherActivity : Activity() {
         REQUEST_IMPORT,
     )
 
+    // the layout shipped with the app. builds without one offer no such button.
+    fun hasDefaults() = DEFAULTS_ASSET in assets.list("").orEmpty()
+
+    // replaces everything, leaving out apps this device does not have, which would otherwise be blank cells.
+    // without the pack it names, any installed pack stands in.
+    fun importDefaults() {
+        val defaults = Store.decode(assets.open(DEFAULTS_ASSET).use { String(it.readBytes()) })
+        if (defaults == null) {
+            Toast.makeText(this, R.string.import_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val pack = defaults.settings.iconPack?.takeIf { wanted -> packs.any { it.pkg == wanted } } ?: packs.firstOrNull()?.pkg
+        overlays.clear()
+        commit(defaults.prune { it !in apps }.withSettings { it.copy(iconPack = pack) })
+        home.post(::fitRows)
+    }
+
     @Deprecated("platform activity results; this launcher has no androidx result api")
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -806,5 +824,6 @@ class LauncherActivity : Activity() {
         const val REQUEST_IMPORT = 2
         const val JSON_MIME = "application/json"
         const val EXPORT_NAME = "booster-layout.json"
+        const val DEFAULTS_ASSET = "defaults.json"
     }
 }

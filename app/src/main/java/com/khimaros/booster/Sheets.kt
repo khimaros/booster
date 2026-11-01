@@ -372,6 +372,17 @@ fun LauncherActivity.openSettings() {
     header(R.string.section_backup)
     row(R.string.export_layout, { "" }) { exportLayout() }
     row(R.string.import_layout, { "" }) { importLayout() }
+    if (hasDefaults()) {
+        row(R.string.import_defaults, { "" }) { anchor ->
+            overlays.menu(
+                listOf(
+                    MenuEntry(getString(R.string.replace_layout), danger = true) { importDefaults() },
+                    MenuEntry(getString(R.string.cancel)) {},
+                ),
+                anchor,
+            )
+        }
+    }
 
     val scroll = ScrollView(this).apply {
         isVerticalScrollBarEnabled = false

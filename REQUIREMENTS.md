@@ -114,6 +114,10 @@ booster is a simple, lightweight, performant android home screen launcher.
 
 ## customization
 
+- "import defaults" in settings replaces the whole layout with one shipped in
+  the app, after a prompt to confirm. apps from it that are not installed are
+  left out, and if its icon pack is missing an installed one stands in. a build
+  shipping no defaults does not show the button.
 - override the icon of any app or folder (home, dock, and drawer folders).
 - a folder always shows one assigned icon, never a preview of its contents.
   new folders default to the icon pack's folder icon.
@@ -135,4 +139,8 @@ booster is a simple, lightweight, performant android home screen launcher.
     arcticons MUST be supported.
   - the icon of any other installed app, labeled "System" in the picker.
 - apply one icon pack globally, with per-app overrides on top.
+- a chosen icon follows the icon pack: its name is looked up in the selected
+  pack, then its original pack, then any other installed pack, then matched to
+  an installed app by name for that app's icon. only if all fail does the item
+  show its default. nothing is rewritten, so changing packs can be undone.
 - reset any override back to the default.

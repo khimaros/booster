@@ -70,6 +70,8 @@
     <string name="dock_slots">dock slots</string>
     <string name="export_layout">export layout</string>
     <string name="import_layout">import layout</string>
+    <string name="import_defaults">import defaults</string>
+    <string name="replace_layout">replace layout</string>
     <string name="on">on</string>
     <string name="off">off</string>
 

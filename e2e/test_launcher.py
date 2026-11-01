@@ -18,6 +18,7 @@ DIALER = "com.android.dialer/com.android.dialer.main.impl.MainActivity"
 PACK_LABEL = "Booster Test Pack"
 TESTPIN_APK = "testpin/build/outputs/apk/debug/testpin-debug.apk"
 PINNED = "Pinned Page"
+ABSENT_PACK = "com.example.absentpack"
 MAGENTA = (255, 0, 255)
 CYAN = (0, 255, 255)
 COLOR_SLACK = 16
@@ -829,9 +830,9 @@ class LauncherTest(unittest.TestCase):
         d.reset_launcher()
         d.find(desc="Phone", within="dock")
         self.open_drawer()
+        calendar = d.find(desc="Calendar", within="drawer_grid")
         second_row = self.drawer_labels()[4]
         top = d.find(desc=second_row, within="drawer_grid").bounds[1]
-        calendar = d.find(desc="Calendar", within="drawer_grid")
         search = d.find(rid="search")
         d.touch("DOWN", *calendar.center)
         time.sleep(d.LONG_PRESS_MS / 1000)
@@ -1149,6 +1150,72 @@ class LauncherTest(unittest.TestCase):
         self.assertTrue(
             folders(layout)[0]["icon"]["name"].startswith("com.android.camera2/")
         )
+
+    def test_import_defaults_asks_then_replaces_the_layout(self):
+        self.add_to_home("Gallery")
+        self.open_settings()
+        sheet = d.find(rid="sheet")
+        x = str(sheet.center[0])
+        d.shell(
+            "input",
+            "swipe",
+            x,
+            str(sheet.bounds[3] - 300),
+            x,
+            str(sheet.bounds[1] + 300),
+            "300",
+        )
+        d.tap(d.find(text="import defaults"))
+        d.find(text="replace layout", within="menu")
+        d.choose("cancel", within="menu")
+        self.assertEqual(
+            d.layout_json()["drawer_folders"], [], "cancel changes nothing"
+        )
+        d.tap(d.find(text="import defaults"))
+        d.choose("replace layout", within="menu")
+        layout = d.wait_layout(lambda l: l["drawer_folders"])
+        self.assertEqual(layout["drawer_folders"][0]["name"], "work")
+        self.assertEqual(
+            home_items(layout), [{"app": CLOCK}], "apps not installed are left out"
+        )
+        self.assertEqual(layout["overrides"][CALENDAR]["label"], "agenda")
+        d.absent(rid="sheet")
+        d.find(desc="Clock", within="pager")
+
+    def seed_icon_choice(self, key, name, icon_pack=None):
+        """the layout an import leaves: `key` chose icon `name` from a pack this device lacks."""
+        layout = d.wait_layout(lambda l: any(l["dock"]))
+        layout["overrides"] = {
+            key: {"label": None, "icon": {"pack": ABSENT_PACK, "name": name}}
+        }
+        layout["settings"]["icon_pack"] = icon_pack
+        d.seed_layout(layout)
+        d.find(desc="Phone", within="dock")
+
+    def assert_same_icon(self, first, second):
+        """both cells in the drawer draw the same icon."""
+        self.open_drawer()
+        cells = [d.find(desc=label, within="drawer_grid") for label in (first, second)]
+        time.sleep(1)
+        self.assertEqual(*[d.icon_pixels(cell) for cell in cells])
+
+    def test_an_icon_from_a_missing_pack_uses_the_app_with_that_name(self):
+        self.seed_icon_choice(CALENDAR, "clock")
+        self.assert_same_icon("Calendar", "Clock")
+
+    def test_an_icon_from_a_missing_pack_uses_an_installed_pack_with_that_name(self):
+        self.seed_icon_choice(CONTACTS, "tp_clock", icon_pack=d.TESTPACK)
+        self.assert_same_icon("Contacts", "Clock")
+
+    def test_import_defaults_picks_an_installed_pack_when_its_own_is_missing(self):
+        self.open_settings()
+        sheet = d.find(rid="sheet")
+        x = str(sheet.center[0])
+        top, bottom = str(sheet.bounds[1] + 300), str(sheet.bounds[3] - 300)
+        d.shell("input", "swipe", x, bottom, x, top, "300")
+        d.tap(d.find(text="import defaults"))
+        d.choose("replace layout", within="menu")
+        d.wait_layout(lambda l: l["settings"]["icon_pack"] == d.TESTPACK)
 
     def test_layout_survives_restart(self):
         self.add_to_home("Clock")

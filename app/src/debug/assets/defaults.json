@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "pages": [[
+    {"app": "com.android.deskclock/com.android.deskclock.DeskClock"},
+    {"app": "com.example.notinstalled/com.example.notinstalled.Main"}
+  ]],
+  "dock": [{"app": "com.android.settings/com.android.settings.Settings"}],
+  "drawer_folders": [{
+    "folder": "f1",
+    "name": "work",
+    "icon": null,
+    "apps": ["com.android.contacts/com.android.contacts.activities.PeopleActivity"]
+  }],
+  "drawer_order": [],
+  "hidden": [],
+  "overrides": {
+    "com.android.calendar/com.android.calendar.AllInOneActivity": {"label": "agenda", "icon": null}
+  },
+  "settings": {"icon_pack": "com.example.absentpack"},
+  "next_id": 2
+}

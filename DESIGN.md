@@ -59,12 +59,22 @@ they would return as new. a shortcut is an `AppItem` keyed
 overrides, the edit sheet and uninstall pruning need no special cases. only
 `appList` (the drawer) leaves them out.
 
+the default layout is an ordinary export at `app/src/main/assets/defaults.json`,
+read by "import defaults" and pruned of apps the device lacks. debug builds use
+the small sample in `app/src/debug/assets/`, so the suite does not depend on
+the real one.
+
 ## icons
 
 resolution, in order: the item's override, the global pack's appfilter match,
 the app's own icon. folders: override, the global pack's `folder` drawable,
 the built-in folder icon. a folder with a custom icon gets a small badge with
 the default folder icon.
+
+an `IconRef` from a pack is a stored name, resolved at draw time by `Icons.ref`:
+the selected pack, its own pack, other installed packs, then `matchingApp`. the
+layout is never rewritten, so a pack change or removal loses nothing, and the
+lru key already carries the selected pack.
 
 packs are found by the adw / nova / go intent actions, which arcticons also
 registers. `appfilter.xml` and `drawable.xml` are read from `res/xml` or

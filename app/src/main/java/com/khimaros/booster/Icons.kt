@@ -28,6 +28,9 @@ class Icons(private val ctx: Context) {
             field = value
         }
 
+    @Volatile
+    var installed: List<String> = emptyList()
+
     @Synchronized
     fun pack(pkg: String): IconPack? = packs.getOrPut(pkg) {
         try {
@@ -53,8 +56,13 @@ class Icons(private val ctx: Context) {
             ?: app.info?.getIcon(density)
             ?: shortcutIcon(ctx, app.shortcut!!, density)
 
-    fun ref(ref: IconRef, apps: Map<String, AppInfo>): Drawable? =
-        if (ref.pack != null) pack(ref.pack)?.drawable(ref.name) else apps[ref.name]?.let(::base)
+    // a chosen icon outlives its pack, so changing or losing a pack keeps the choice. the name is tried in the
+    // selected pack, the pack it came from and any other installed one, then against the apps themselves.
+    fun ref(ref: IconRef, apps: Map<String, AppInfo>): Drawable? {
+        if (ref.pack == null) return apps[ref.name]?.let(::base)
+        val order = (listOfNotNull(globalPack, ref.pack) + installed).distinct().filter { it in installed }
+        return order.firstNotNullOfOrNull { pack(it)?.drawable(ref.name) } ?: matchingApp(apps.values, ref.name)?.let(::base)
+    }
 
     fun app(app: AppInfo, override: IconRef?, apps: Map<String, AppInfo>): Drawable =
         override?.let { ref(it, apps) } ?: base(app)
