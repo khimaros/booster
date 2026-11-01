@@ -159,7 +159,7 @@ class Overlays(private val root: FrameLayout, private val scale: Scale, private 
     }
 
     // the open folder: a centered card around its grid
-    fun card(grid: View): View {
+    fun card(grid: View, onDragOut: () -> Unit): View {
         val layer = scrim()
         val card = FrameLayout(ctx).apply {
             id = R.id.folder_card
@@ -172,10 +172,13 @@ class Overlays(private val root: FrameLayout, private val scale: Scale, private 
             setOnDragListener { _, _ -> true }
         }
         layer.addView(card, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
-        // a drag that leaves the card closes it, revealing home or the drawer beneath
+        // a drag that leaves the card closes it, so the app can be dropped on home or the dock
         layer.setOnDragListener { _, ev ->
             if (ev.action == DragEvent.ACTION_DRAG_LOCATION || ev.action == DragEvent.ACTION_DRAG_ENTERED) {
-                layer.post { dismiss(layer) }
+                layer.post {
+                    if (isShowing(layer)) onDragOut()
+                    dismiss(layer)
+                }
             }
             true
         }

@@ -72,10 +72,10 @@ booster is a simple, lightweight, performant android home screen launcher.
   nearest empty slot, and a full row refuses it.
 - add to, remove from, rename, and dissolve folders.
 - rearrange apps inside a folder by dragging them within the open folder. the
-  drag may cross the card's padding and gaps; only leaving the card closes it,
-  revealing home for a home or dock folder and the drawer for a drawer folder.
-- rearrange the drawer by dragging, by those same rules. an app dragged out
-  of a drawer folder lands beside the entry it is dropped on. the drawer stays open, and scrolls when a drag holds
+  drag may cross the card's padding and gaps; only leaving the card closes it
+  (and the drawer, for a drawer folder) to drop on home or the dock. while
+  rearranging a drawer folder, the drawer stays open behind it.
+- rearrange the drawer by dragging, by those same rules. the drawer stays open, and scrolls when a drag holds
   near its top or bottom edge. while dragging, the search bar becomes an "add
   to home" target; hovering it closes the drawer to drop on home or the dock.
   a drag from search results goes straight to home.
@@ -84,13 +84,16 @@ booster is a simple, lightweight, performant android home screen launcher.
 - the "add to folder" chooser lists folders alphabetically, then "new
   folder", and scrolls when there are many. in app menus it sits just above
   "uninstall".
-- folder names are unique: new folders are named "folder", "folder 2", and
-  renaming to a name already in use is refused.
+- folder names are unique among home and dock folders, and separately among
+  drawer folders, so a home folder may share a name with a drawer folder and
+  keep its own contents. new folders are named "folder", "folder 2", and
+  renaming to a name already in use on that side is refused.
 - dragging an app out of a drawer folder onto home or the dock places a
   shortcut and keeps it in the folder; home and dock folders give it up.
 - other apps can add shortcuts to home (a browser's "add to home"). booster
   asks first with a bottom sheet over the requesting app; the shortcut then
-  takes the first free home slot. shortcuts move, rename, change icon and join
+  takes the first free home slot. a shortcut pinned without an icon shows the
+  icon of the app that pinned it. shortcuts move, rename, change icon and join
   folders like apps, have no uninstall entry, and removing one unpins it. they
   leave with their app.
 - a drawer folder can be added to home or the dock from its long-press menu

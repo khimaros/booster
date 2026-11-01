@@ -403,6 +403,18 @@ def evidence():
     return f"{path}.png"
 
 
+def pixel(x, y):
+    """the rgb on screen at a point, from a raw screencap: a 16 byte header, then 4 bytes a pixel."""
+    raw = subprocess.run(
+        [ADB, "-P", ADB_PORT, "-s", SERIAL, "exec-out", "screencap"],
+        capture_output=True,
+        check=True,
+    ).stdout
+    width = int.from_bytes(raw[:4], "little")
+    at = 16 + (y * width + x) * 4
+    return tuple(raw[at : at + 3])
+
+
 def rid_of(name):
     return f"{PACKAGE}:id/{name}"
 

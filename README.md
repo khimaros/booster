@@ -56,10 +56,10 @@ settings", "icon pack", and pick from the popup. the same settings turn the
 drawer animation off and can hide apps that are already on home or the dock
 from the drawer ("hide home apps from drawer").
 
-dragging an app out of a drawer folder drops it in the drawer; carried on to
-the search bar and then to home or the dock, it places a copy there and stays
-in the folder. "drawer order" in settings returns the drawer to sorting by
-name. folder names are unique.
+dragging an app out of a drawer folder puts a shortcut on home or the dock and
+leaves the folder as it was. "drawer order" in settings returns the drawer to
+sorting by name. folder names are unique on home and in the drawer, each on
+its own, so the two can share a name.
 
 "add to home" in another app works while booster is the default home app.
 

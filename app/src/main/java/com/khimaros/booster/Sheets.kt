@@ -104,7 +104,7 @@ fun LauncherActivity.openEdit(item: Item) {
     buttons.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
     buttons.addView(textButton(getString(R.string.done), palette.accent) {
         val name = nameEdit.text.toString().trim()
-        if (folder != null && layout.folderNameTaken(name, folder.id)) {
+        if (folder != null && layout.folderNameTaken(name, layout.isDrawerFolder(folder.id), folder.id)) {
             Toast.makeText(this, getString(R.string.folder_name_taken, name), Toast.LENGTH_SHORT).show()
             return@textButton
         }

@@ -6,11 +6,11 @@
 #   REPO=owner/name scripts/release-setup.sh
 #
 # the keystore and its password live outside the repo, in $BOOSTER_RELEASE_DIR
-# (default ~/.config/booster/release). back that directory up: android only installs
+# (default ~/.local/share/secrets/booster). back that directory up: android only installs
 # updates signed with the same key.
 set -eu
 
-DIR="${BOOSTER_RELEASE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/booster/release}"
+DIR="${BOOSTER_RELEASE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/secrets/booster}"
 KEYSTORE="$DIR/release.jks"
 PASSFILE="$DIR/password"
 ALIAS=booster

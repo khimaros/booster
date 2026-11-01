@@ -164,24 +164,25 @@ fun Layout.remove(slot: Slot): Layout = when (slot) {
 
 fun Layout.allFolders(): List<Folder> = homeFolders() + drawerFolders
 
-// true when another folder (anywhere) already uses this name
-fun Layout.folderNameTaken(name: String, exceptId: String? = null) =
-    allFolders().any { it.id != exceptId && it.name.equals(name, ignoreCase = true) }
+// true when another folder on the same side (home and dock, or the drawer) already uses this name.
+// the two sides are separate, so a home folder may share a name with a drawer folder.
+fun Layout.folderNameTaken(name: String, inDrawer: Boolean, exceptId: String? = null) =
+    (if (inDrawer) drawerFolders else homeFolders()).any { it.id != exceptId && it.name.equals(name, ignoreCase = true) }
 
 // "name", then "name 2", "name 3"... whichever is free first
-fun Layout.uniqueFolderName(name: String): String =
-    generateSequence(1) { it + 1 }.map { if (it == 1) name else "$name $it" }.first { !folderNameTaken(it) }
+fun Layout.uniqueFolderName(name: String, inDrawer: Boolean): String =
+    generateSequence(1) { it + 1 }.map { if (it == 1) name else "$name $it" }.first { !folderNameTaken(it, inDrawer) }
 
 // creates a folder in a home or dock slot and returns the new layout and folder id
 fun Layout.newFolderAt(slot: Slot, keys: List<String>, name: String): Pair<Layout, String> {
     val id = "f$nextId"
-    return copy(nextId = nextId + 1).put(slot, Folder(id, uniqueFolderName(name), null, keys)) to id
+    return copy(nextId = nextId + 1).put(slot, Folder(id, uniqueFolderName(name, inDrawer = false), null, keys)) to id
 }
 
 fun Layout.newDrawerFolder(keys: List<String>, name: String): Pair<Layout, String> {
     val id = "f$nextId"
     val cleared = keys.fold(this) { layout, key -> layout.drawerFolderOf(key)?.let { layout.removeFromFolder(it.id, key) } ?: layout }
-    val folder = Folder(id, cleared.uniqueFolderName(name), null, keys)
+    val folder = Folder(id, cleared.uniqueFolderName(name, inDrawer = true), null, keys)
     return cleared.copy(nextId = nextId + 1, drawerFolders = cleared.drawerFolders + folder) to id
 }
 

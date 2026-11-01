@@ -486,7 +486,7 @@ class LauncherActivity : Activity() {
         val grid = CellGrid(this, scale, 1)
         openFolder = folder.id to grid
         fillCard(grid, folder)
-        openCard = overlays.card(grid)
+        openCard = overlays.card(grid, onDragOut = ::closeDrawer)
     }
 
     private fun fillCard(grid: CellGrid, folder: Folder) {
@@ -659,7 +659,7 @@ class LauncherActivity : Activity() {
         val payload = DragPayload(cell.slot ?: return, cell.item ?: return)
         drag = payload
         // search results are not the drawer's arrangement, so a drag from them goes straight to home
-        val rearranging = drawer.isOpen && drawer.search.text.isEmpty()
+        val rearranging = payload.source is DrawerSlot && drawer.isOpen && drawer.search.text.isEmpty()
         // drop targets must be showing when the drag starts to receive its events
         home.showDragUi(true)
         drawer.showDragUi(rearranging)
@@ -668,8 +668,8 @@ class LauncherActivity : Activity() {
             endDrag()
             return
         }
-        // an app dragged from an open folder keeps the folder open, so it can be reordered; leaving the
-        // card reveals what is beneath it
+        // an app dragged from an open folder keeps the folder (and the drawer under it) open, so it can be
+        // rearranged; leaving the card reveals home
         if (payload.source is FolderSlot || rearranging) return
         overlays.clear()
         closeDrawer()
@@ -680,13 +680,6 @@ class LauncherActivity : Activity() {
         drag = null
         home.showDragUi(false)
         drawer.showDragUi(false)
-    }
-
-    // only entries that belong at the drawer's top level can land there; a pinned shortcut does not
-    private fun landsInDrawer(payload: DragPayload): Boolean {
-        val source = payload.source
-        val fromDrawer = source is DrawerSlot || (source is FolderSlot && layout.isDrawerFolder(source.folderId))
-        return fromDrawer && (payload.item as? AppItem)?.let { apps[it.key]?.shortcut } == null
     }
 
     // what landing on an item needs, in every view: an app can join any folder but the one it came from, and
@@ -701,9 +694,9 @@ class LauncherActivity : Activity() {
     // recycled cell would miss the start of the drag
     private val drawerDropListener = View.OnDragListener { _, ev ->
         val payload = ev.localState as? DragPayload
-        if (payload == null || !landsInDrawer(payload)) return@OnDragListener false
+        if (payload == null || payload.source !is DrawerSlot) return@OnDragListener false
         val open = drawer.translationY == 0f
-        val lands = { target: Item -> canLand(payload, target, swaps = payload.source is DrawerSlot) }
+        val lands = { target: Item -> canLand(payload, target, swaps = true) }
         when (ev.action) {
             DragEvent.ACTION_DRAG_LOCATION -> if (open) drawer.hover(ev.x, ev.y, lands) else drawer.leaveDrag()
             DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> {
@@ -718,20 +711,14 @@ class LauncherActivity : Activity() {
         true
     }
 
-    // an app coming out of a drawer folder has no drawer position to swap with, so it goes beside the target
     private fun dropInDrawer(payload: DragPayload, target: Item, where: Drop) {
         val id = drawerId(target)
         val moved = drawerId(payload.item)
-        val source = payload.source as? FolderSlot
         commit(
             when {
-                where == Drop.ONTO && target is Folder && payload.item is AppItem ->
-                    layout.moveToDrawerFolder(target.id, payload.item.key)
-                where == Drop.ONTO && source == null -> layout.swapInDrawer(naturalDrawer(), moved, id)
-                else -> {
-                    val lifted = source?.let { layout.removeFromFolder(it.folderId, it.key) } ?: layout
-                    lifted.moveInDrawer(naturalDrawer(lifted), moved, id, where == Drop.AFTER)
-                }
+                where != Drop.ONTO -> layout.moveInDrawer(naturalDrawer(), moved, id, where == Drop.AFTER)
+                target is Folder && payload.item is AppItem -> layout.moveToDrawerFolder(target.id, payload.item.key)
+                else -> layout.swapInDrawer(naturalDrawer(), moved, id)
             },
         )
     }

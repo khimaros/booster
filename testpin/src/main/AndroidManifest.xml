@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
-        android:label="Booster Test Pin"
-        tools:ignore="MissingApplicationIcon">
+        android:icon="@drawable/fixture_icon"
+        android:label="Booster Test Pin">
         <!-- the system only pins shortcuts for packages with a launcher activity -->
         <activity
             android:name=".PinActivity"

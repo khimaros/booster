@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
 import android.content.pm.ShortcutInfo
+import android.graphics.drawable.Drawable
 import android.os.Process
 import android.provider.MediaStore
 import android.provider.Settings as SystemSettings
@@ -48,6 +49,14 @@ fun loadShortcuts(ctx: Context): List<AppInfo> {
     val query = LauncherApps.ShortcutQuery().setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
     return launcher.getShortcuts(query, Process.myUserHandle()).orEmpty()
         .map { AppInfo(shortcutKey(it.`package`, it.id), (it.shortLabel ?: it.longLabel ?: it.id).toString(), null, it) }
+}
+
+// a shortcut's own icon or, when it was pinned without one, the icon of the app that published it
+fun shortcutIcon(ctx: Context, shortcut: ShortcutInfo, density: Int): Drawable {
+    val launcher = ctx.getSystemService(LauncherApps::class.java)
+    return launcher.getShortcutIconDrawable(shortcut, density)
+        ?: launcher.getActivityList(shortcut.`package`, shortcut.userHandle).firstOrNull()?.getIcon(density)
+        ?: ctx.packageManager.defaultActivityIcon
 }
 
 // keeps only the given shortcuts pinned for their package

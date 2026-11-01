@@ -111,10 +111,11 @@ fixed fallback. the background is black unless the wallpaper option is on.
   `dropInFolder` and the drawer's order functions then apply it. home and dock
   rows have fixed slots, so `inserted` makes room by closing a gap: the one the
   item left, or else the nearest.
-- dragging from an open folder keeps the card open, so its cells can be
-  rearranged (`Layout.dropInFolder`). the card itself accepts the drag, so its padding
-  and row gaps count as inside. leaving the card dismisses it, revealing
-  whatever is beneath: home, or the drawer for a drawer folder.
+- dragging from an open folder keeps the card open, and the drawer under a
+  drawer folder, so its cells can be rearranged (`Layout.dropInFolder`). the
+  card itself accepts the drag, so its padding and row gaps count as inside.
+  leaving the card dismisses it (and closes the drawer) so the app can be
+  dropped on home or the dock.
 - a drag in the drawer stays in the drawer, unless it started from search
   results. the `GridView` holds one drag listener, because cells it recycles
   during a scroll would miss the drag's start. `DrawerView.dropAt` turns a

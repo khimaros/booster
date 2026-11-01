@@ -37,7 +37,7 @@ class PinActivity : Activity() {
                 finish()
             }
         }
-        val icon = ImageView(this).apply { setImageDrawable(launcher.getShortcutIconDrawable(shortcut, metrics.densityDpi)) }
+        val icon = ImageView(this).apply { setImageDrawable(shortcutIcon(context, shortcut, metrics.densityDpi)) }
         val name = label(scale, palette.fg, (shortcut.shortLabel ?: shortcut.longLabel ?: "").toString()).apply { id = R.id.pin_name }
         val preview = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL

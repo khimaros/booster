@@ -31,7 +31,7 @@ keystore file, `base64 -w0 release.jks`), `BOOSTER_KEYSTORE_PASSWORD`,
 `BOOSTER_KEY_ALIAS` and `BOOSTER_KEY_PASSWORD`. without them the workflow
 fails rather than publish an unsigned apk. `make release-setup` does this
 once: it creates the keystore and a random password in
-`~/.config/booster/release` (reused on later runs) and sets the secrets with
+`~/.local/share/secrets/booster` (reused on later runs) and sets the secrets with
 `gh` on the repository of the git remote, or `REPO=owner/name`. locally, `make release` signs when
 `BOOSTER_KEYSTORE` and the same password and alias variables are set, and
 otherwise leaves the apk unsigned.
