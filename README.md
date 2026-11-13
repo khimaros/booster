@@ -45,8 +45,9 @@ lightweight android launcher where every icon and name is customizable.
 | swipe sideways | home | change page |
 | back or home | anywhere | close the top sheet, menu, folder or drawer |
 
-going home from an app returns you to the home screen. with "remember drawer"
-on, it returns you to the drawer as you left it; press home again to close it.
+going home from an app returns you to the first home page, with the drawer and
+any folder closed. with "remember drawer" on, it returns you to the page, drawer
+and folder as you left them; press home again to close them.
 the page line above the dock appears only while you switch pages.
 
 to set an icon: long press an app or folder, choose "edit icon & name", then
@@ -62,6 +63,12 @@ dragging an app out of a drawer folder puts a shortcut on home or the dock and
 leaves the folder as it was. "drawer order" in settings returns the drawer to
 sorting by name. folder names are unique on home and in the drawer, each on
 its own, so the two can share a name.
+
+"folder stacks" in settings changes how the drawer shows folders. each folder
+becomes one slot, and each swipe up slides a new page over the last, with every
+slot on its next app; a folder that runs out leaves its slot empty. swipe down
+to step back, and from the first page to close the drawer. to rearrange the
+drawer or edit its folders, turn it off first.
 
 "add to home" in another app works while booster is the default home app.
 

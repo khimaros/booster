@@ -47,6 +47,15 @@ means the natural order, folders then apps, each by name. `Layout.arranged`
 merges it with the entries that exist now, so stale ids drop out and new apps
 join at the end; hidden entries keep their place for when they return.
 
+folder stacks: `stackReels` turns the same drawer entries into what each slot
+steps through. `DrawerView` keeps a position in pages and two `CellGrid`s, the
+page on show and the next on a black sheet translated over it, so `bind`, menus and
+drags need no cases of their own. a swipe moves one page at most and settles
+through `passed` and `settleMs`, the drawer's own rule and timing. a stacked
+app's slot is its `FolderSlot`, so it has the
+folder's menu; with no card open, dragging it closes the drawer. the position
+stays when the keyboard opens (`stackSlots` ignores it) and resets on closing.
+
 pinned shortcuts: the system owns which shortcuts are pinned to the default
 launcher. `PinActivity` handles `CONFIRM_PIN_SHORTCUT`, shows a sheet over the
 requesting app and calls `PinItemRequest.accept()`; it never touches the
@@ -136,9 +145,11 @@ fixed fallback. the background is black unless the wallpaper option is on.
 - `onNewIntent` treats home as "already home" only with window focus and
   without `FLAG_ACTIVITY_BROUGHT_TO_FRONT`, as aosp launcher3 does, so
   returning from an app never counts as a press. after leaving for an app,
-  `onResume` closes an open drawer unless `rememberDrawer` is on.
+  `onResume` closes an open folder and drawer and returns to the first page
+  unless `rememberDrawer` is on. a stop with the screen off is not leaving.
 - settings with a few values open a menu of all of them, the current one an
-  accent pill (`MenuEntry.selected`).
+  accent band (`MenuEntry.selected`). menu rows run edge to edge and the menu
+  clips them to its corners, so the band needs no shape of its own.
 - long press shows a menu and arms a drag; moving past the touch slop
   dismisses the menu and starts a platform drag (`startDragAndDrop`). home
   and dock cells and the three drop targets are the drop listeners.

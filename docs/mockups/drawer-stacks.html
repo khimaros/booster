@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>booster: drawer stacks mock</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #16181c; color: #e3e3e8;
+    font-family: Roboto, system-ui, sans-serif; overflow: hidden; }
+  main { display: flex; height: 100%; align-items: center; justify-content: center; gap: 32px; }
+  #phone { position: relative; flex: none; background: #000; overflow: hidden;
+    user-select: none; -webkit-user-select: none; }
+  .wide #phone { border-radius: 28px; box-shadow: 0 0 0 2px #33363d; }
+  #grid { position: absolute; left: var(--gutter); right: var(--gutter); top: var(--top);
+    bottom: var(--bottom); display: grid; grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: var(--row); touch-action: none; }
+  .slot { position: relative; overflow: hidden; }
+  .cell { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    padding-top: calc(var(--row) * .05); will-change: transform, opacity; }
+  .icon { width: var(--icon); height: var(--icon); flex: none; border: 2px solid #e3e3e8;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: calc(var(--icon) * .42); font-weight: 300; }
+  .label { width: 100%; margin-top: 4px; text-align: center; font-size: var(--text);
+    line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+  .folder { width: 100%; text-align: center; font-size: calc(var(--text) * .72); line-height: 1.2;
+    color: #a8c7fa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mark { position: absolute; left: calc(50% + var(--icon) * .2); top: calc(var(--row) * .05 - 2px);
+    padding: 0 3px; border-radius: 6px; background: #000;
+    color: #a8c7fa; font-size: calc(var(--text) * .66); line-height: 1.25; }
+  .looped .icon { border-style: dashed; }
+  #rail { position: absolute; right: 3px; top: var(--top); bottom: var(--bottom); width: 2px;
+    background: #33363d; opacity: 0; transition: opacity .3s; }
+  #rail i { position: absolute; left: 0; width: 2px; background: #a8c7fa; }
+  #count { position: absolute; right: 12px; top: calc(var(--top) - 26px); color: #a8c7fa;
+    font-size: var(--text); opacity: 0; transition: opacity .3s; }
+  .live #rail, .live #count { opacity: 1; transition: none; }
+  #search { position: absolute; left: 5%; right: 5%; bottom: calc(var(--row) * .32);
+    height: calc(var(--row) * .56); border: 0; outline: 0; border-radius: 999px; background: #2c2e33;
+    color: #e3e3e8; font: inherit; font-size: calc(var(--text) * 1.15); padding: 0 24px; }
+  #search::placeholder { color: #9a9ca3; }
+  #toast { position: absolute; left: 50%; bottom: calc(var(--row) * 1.05); transform: translateX(-50%);
+    max-width: 90%; padding: 8px 16px; border-radius: 999px; background: #a8c7fa; color: #062e6f;
+    font-size: var(--text); white-space: nowrap; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.on { opacity: 1; }
+  #panel { width: 300px; flex: none; font-size: 14px; line-height: 1.4; }
+  #panel h1 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+  #panel p { margin: 0 0 16px; color: #9a9ca3; }
+  .opt { margin-bottom: 14px; }
+  .opt b { display: block; font-weight: 500; margin-bottom: 4px; }
+  .opt button { font: inherit; color: #e3e3e8; background: #2c2e33; border: 0; border-radius: 999px;
+    padding: 6px 12px; margin: 0 4px 4px 0; cursor: pointer; }
+  .opt button.on { background: #a8c7fa; color: #062e6f; }
+  #gear { display: none; position: absolute; right: 8px; top: 8px; z-index: 3; width: 36px; height: 36px;
+    border: 0; border-radius: 50%; background: #2c2e33; color: #a8c7fa; font-size: 18px; }
+  .narrow #gear { display: block; }
+  .narrow #panel { display: none; position: absolute; inset: 0; z-index: 2; width: auto;
+    padding: 56px 24px 24px; background: #16181c; overflow: auto; }
+  .narrow.show #panel { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <div id="phone">
+    <div id="count"></div>
+    <div id="grid"></div>
+    <div id="rail"><i></i></div>
+    <div id="toast"></div>
+    <input id="search" placeholder="search apps" autocomplete="off">
+  </div>
+  <section id="panel"></section>
+</main>
+<button id="gear" aria-label="options">=</button>
+<script>
+// the drawer of app/src/main/assets/defaults.json in drawer_order: [folder or null, ...items].
+// labels are derived from package names, because an export stores keys and no labels.
+const ENTRIES = [
+  ["Calculate","Converter","Calculator","Libra"],
+  ["Sync","DAVx5","Gotify","LocalSend","MGit","Syncthing","ntfy","ICSx5","Extract"],
+  ["Translate","Translate","RTranslator"],
+  [null,"Ramble"],
+  ["Assist","Claude","FluffyChat","Paseo","Gemini","Kelivo","Kai","Phone AI","Tailwind","Google","Omni","Touch","Ramble"],
+  ["Money","Alipay","Currencies","Splitwise","Stocks"],
+  ["Settings","Latin","Arcticons","Keyboard","Thumbkey","API","Widget","GUI","API 2","Whisper","TTS","Caffeine","RSAF","GrapheneOS","Settings"],
+  ["Intents","GeoShare","LaunchChat","Untracker","Share2Storage"],
+  ["Scan","Software","Audio analyzer","Barcode","Stardroid","Breezy Weather","Lens","WiFi Analyzer","Network Survey","Health","FairScan","MakeACopy","Doc Scanner"],
+  ["Survive","Trail Sense"],
+  ["Remote","Flipper","Gadgetbridge","AndrOBD","Kore","Mmusa","QGroundControl","Starlink","WLED","Victron","Bantam","MDR","HTTP Shortcuts","Transmission","DFU","Find My Device","Mesh","Chromecast"],
+  ["Record","Camera","Pixel Camera","TimeLapse","Recorder","Recorder 2"],
+  ["Meet","HelloTalk","Meetup","Couchsurfing"],
+  ["Track","Calendar","Fitness","GPSLogger","Paseo","Tasks","Track & Graph","Veilist","Sheets"],
+  ["Media","YouTube","Audiobook","Application","DI","Finamp","Jellyfin","NewPipe","Media","Music","RadioDroid","Jellyfin 2","mpv","YT Music","JellyBook","Reader","VLC","Vinyl","Transistor","F-Droid Media","YTDL","Readest","Noise"],
+  ["Hack","ConnectBot","Terminal","Toolbox","Termux","SSH Keys","Mimic","Repeat","Cloud Console","Sideband"],
+  ["Consume","Amazon","DoorDash","Customer","Airbnb","Zillow","Etsy","Uber","Waymo","English","AliExpress"],
+  ["Create","Crossword","Metronome","Rush","Markor","Tabs","Tabs 2","Tuner","Obsidian","Paintroid","Resizer"],
+  ["Idle","AntennaPod","Bluesky","Feeder","Facebook","Glider","Instagram","The Pattern","Tusky","TikTok","Meditation","RedReader","Primal","Nospeak"],
+  ["Services","Nostr Signer","Citrine"],
+  ["Install","GrapheneOS Apps","F-Droid","Play Store","Obtainium"],
+  ["Access","Aegis","Auditor","Bitwarden","WireGuard","Wallet","FOSS Wallet","PDF Wallet"],
+  ["Contact","Contacts","Email","Meet","Gmail"],
+  ["Game","Boxcars","Mobile","Mindustry","Tic"],
+  ["Learn","Anki","Duolingo","Learn","Wikipedia","Survival","Android"],
+  ["Chat","Droid","Briar","Nostr","Discord","IRC","LINE","Messenger","Signal","X","Zalo","Mattermost","WhatsApp","Messages","VeilidChat","Voice"],
+  ["Local","OsmAnd","Local","Maps","Minimap","GasBuddy","Tourists","OsmAnd 2"],
+  ["Browse","Fennec","Browser","Lagrange","Webspace"],
+  ["Files","Docs","Docs 2","Files","Gallery","My Files","Viewer","Photos","Photos 2","CIFS","Metadator","PDF"],
+  [null,"Clock"],
+  [null,"Phone"],
+];
+
+const OPTIONS = {
+  end: { title: "when a folder runs out", values: { blank: "empty slot", wrap: "start over", hold: "keep last" } },
+  motion: { title: "slot motion", values: { reel: "reel", fade: "crossfade" } },
+  swipe: { title: "a swipe moves", values: { scrub: "with the finger", page: "one page" } },
+  folder: { title: "folder name", values: { off: "hidden", on: "under the app" } },
+  mark: { title: "position in folder", values: { off: "hidden", on: "shown" } },
+};
+const COLUMNS = 4, REFERENCE_WIDTH = 412, REFERENCE_HEIGHT = 915, NARROW = 720;
+const SETTLE = .22, FLING_MS = 260, HELD_MS = 40, TAP_SLOP = 10, TAP_MS = 400, CLOSE_PULL = 90, IDLE_MS = 900;
+
+const query = new URLSearchParams(location.search);
+const choice = Object.fromEntries(Object.keys(OPTIONS).map(k => {
+  const v = query.get(k);
+  return [k, v in OPTIONS[k].values ? v : Object.keys(OPTIONS[k].values)[0]];
+}));
+const $ = id => document.getElementById(id);
+const grid = $("grid"), phone = $("phone"), search = $("search");
+
+let reels = [], pages = 1, rowHeight = 100, position = 0, target = 0, frame = 0, shown = -1, idle = 0;
+
+// entries past the last slot join the reel of a slot from the top, so nothing needs a scroll.
+function buildReels(slots) {
+  const out = Array.from({ length: slots }, () => []);
+  ENTRIES.forEach(([folder, ...items], i) => items.forEach((label, index) =>
+    out[i % slots].push({ label, folder, index, size: items.length })));
+  return out;
+}
+
+// the item a slot shows on a page, which is the one rule the idea adds to the drawer.
+function itemAt(reel, page) {
+  if (choice.end === "blank") return reel[page] || null;
+  if (choice.end === "hold") return reel[Math.min(page, reel.length - 1)];
+  return reel[page % reel.length];
+}
+
+function cellHtml(item) {
+  if (!item) return "";
+  const folder = choice.folder === "on" && item.folder ? `<div class="folder">${item.folder}</div>` : "";
+  const mark = choice.mark === "on" && item.size > 1 ? `<div class="mark">${item.index + 1}/${item.size}</div>` : "";
+  return `<div class="icon">${item.label[0]}</div>${mark}<div class="label">${item.label}</div>${folder}`;
+}
+
+function fill(cell, reel, page) {
+  const item = page < pages ? itemAt(reel, page) : null;
+  cell.innerHTML = cellHtml(item);
+  cell.classList.toggle("looped", !!item && reel.length > 1 && page >= reel.length);
+  cell.dataset.key = item ? item.label + item.index : "";
+}
+
+function render() {
+  if (search.value) return;
+  const page = Math.floor(position), fraction = position - page;
+  const refill = page !== shown;
+  shown = page;
+  [...grid.children].forEach((slot, i) => {
+    const [a, b] = slot.children;
+    if (refill) { fill(a, reels[i], page); fill(b, reels[i], page + 1); }
+    const moved = a.dataset.key !== b.dataset.key ? fraction : 0;
+    if (choice.motion === "reel") {
+      a.style.transform = `translateY(${-moved * 100}%)`;
+      b.style.transform = `translateY(${(1 - moved) * 100}%)`;
+      a.style.opacity = b.style.opacity = 1;
+    } else {
+      a.style.transform = b.style.transform = "none";
+      a.style.opacity = 1 - moved;
+      b.style.opacity = moved;
+    }
+  });
+  const height = 100 / pages, bar = $("rail").firstElementChild;
+  bar.style.height = height + "%";
+  bar.style.top = position * height + "%";
+  $("count").textContent = `${Math.round(position) + 1} / ${pages}`;
+}
+
+function wake() {
+  phone.classList.add("live");
+  clearTimeout(idle);
+  idle = setTimeout(() => phone.classList.remove("live"), IDLE_MS);
+}
+
+function settle() {
+  cancelAnimationFrame(frame);
+  const step = () => {
+    position += (target - position) * SETTLE;
+    if (Math.abs(target - position) < .002) position = target;
+    render();
+    wake();
+    if (position !== target) frame = requestAnimationFrame(step);
+  };
+  frame = requestAnimationFrame(step);
+}
+
+function goTo(page) {
+  target = Math.max(0, Math.min(pages - 1, page));
+  settle();
+}
+
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.add("on");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("on"), 1400);
+}
+
+function results(text) {
+  const seen = new Set(), found = [];
+  ENTRIES.forEach(([folder, ...items]) => items.forEach((label, index) => {
+    if (label.toLowerCase().includes(text) && !seen.has(label)) {
+      seen.add(label);
+      found.push({ label, folder, index, size: items.length });
+    }
+  }));
+  return found;
+}
+
+function showSearch() {
+  const text = search.value.trim().toLowerCase();
+  if (!text) return build();
+  cancelAnimationFrame(frame);
+  grid.innerHTML = results(text).slice(0, reels.length).map(item =>
+    `<div class="slot"><div class="cell">${cellHtml(item)}</div></div>`).join("");
+}
+
+function build() {
+  const w = parseFloat(phone.style.width), base = w / 30.65;
+  rowHeight = w * .2556;
+  const top = 48, bottom = rowHeight * 1.0;
+  const rows = Math.floor((parseFloat(phone.style.height) - top - bottom) / rowHeight);
+  reels = buildReels(COLUMNS * rows);
+  pages = Math.max(...reels.map(r => r.length));
+  grid.innerHTML = reels.map(() => '<div class="slot"><div class="cell"></div><div class="cell"></div></div>').join("");
+  Object.entries({ "--gutter": base * 1.618, "--row": rowHeight, "--icon": w * .139, "--text": base,
+    "--top": top, "--bottom": bottom }).forEach(([k, v]) => phone.style.setProperty(k, v + "px"));
+  position = target = Math.min(position, pages - 1);
+  shown = -1;
+  render();
+}
+
+function resize() {
+  const narrow = innerWidth < NARROW;
+  document.body.className = narrow ? "narrow" : "wide";
+  const height = narrow ? innerHeight : Math.min(innerHeight - 24, REFERENCE_HEIGHT);
+  phone.style.height = height + "px";
+  phone.style.width = (narrow ? innerWidth : height * REFERENCE_WIDTH / REFERENCE_HEIGHT) + "px";
+  build();
+}
+
+let press = null;
+grid.addEventListener("pointerdown", e => {
+  cancelAnimationFrame(frame);
+  grid.setPointerCapture(e.pointerId);
+  const slot = e.target.closest(".slot");
+  press = { y: e.clientY, last: e.clientY, at: e.timeStamp, lastAt: e.timeStamp, start: position, velocity: 0,
+    index: [...grid.children].indexOf(slot), moved: false };
+});
+grid.addEventListener("pointermove", e => {
+  if (!press) return;
+  const travel = press.y - e.clientY;
+  if (Math.abs(travel) > TAP_SLOP) press.moved = true;
+  const dt = Math.max(1, e.timeStamp - press.lastAt);
+  press.velocity = (press.last - e.clientY) / dt / rowHeight;
+  press.last = e.clientY;
+  press.lastAt = e.timeStamp;
+  if (choice.swipe === "scrub" && !search.value) {
+    position = target = Math.max(0, Math.min(pages - 1, press.start + travel / rowHeight));
+    render();
+    wake();
+  }
+});
+grid.addEventListener("pointerup", e => {
+  if (!press) return;
+  const travel = press.y - e.clientY, was = press;
+  press = null;
+  if (!was.moved && e.timeStamp - was.at < TAP_MS) {
+    if (search.value) return toast("opens the app");
+    const item = reels[was.index] && itemAt(reels[was.index], Math.round(position));
+    return toast(item ? `opens ${item.label}` : "empty slot");
+  }
+  if (search.value) return;
+  if (was.start === 0 && travel < -CLOSE_PULL) { toast("the drawer closes here"); return goTo(0); }
+  if (choice.swipe === "page") return goTo(Math.round(was.start) + Math.sign(travel));
+  const velocity = e.timeStamp - was.lastAt < HELD_MS ? was.velocity : 0;
+  goTo(Math.round(position + velocity * FLING_MS));
+});
+grid.addEventListener("wheel", e => {
+  e.preventDefault();
+  if (performance.now() - (grid.wheelAt || 0) < 90) return;
+  grid.wheelAt = performance.now();
+  goTo(target + Math.sign(e.deltaY));
+}, { passive: false });
+addEventListener("keydown", e => {
+  if (document.activeElement === search) return;
+  if (e.key === "ArrowDown") goTo(target + 1);
+  if (e.key === "ArrowUp") goTo(target - 1);
+});
+addEventListener("resize", resize);
+search.addEventListener("input", showSearch);
+$("gear").addEventListener("click", () => document.body.classList.toggle("show"));
+
+$("panel").innerHTML = `<h1>drawer stacks</h1>
+  <p>each folder is one slot. swipe up on the grid and the slot steps through the folder.
+  wheel and arrow keys work too. swipe down on page 1 closes the drawer. a dashed ring is a repeat.
+  letters stand in for icons.</p>` +
+  Object.entries(OPTIONS).map(([key, o]) => `<div class="opt"><b>${o.title}</b>` +
+    Object.entries(o.values).map(([v, name]) =>
+      `<button data-key="${key}" data-value="${v}">${name}</button>`).join("") + "</div>").join("");
+
+function paintOptions() {
+  document.querySelectorAll(".opt button").forEach(b =>
+    b.classList.toggle("on", choice[b.dataset.key] === b.dataset.value));
+}
+$("panel").addEventListener("click", e => {
+  const { key, value } = e.target.dataset;
+  if (!key) return;
+  choice[key] = value;
+  paintOptions();
+  shown = -1;
+  render();
+});
+
+paintOptions();
+resize();
+const startPage = parseInt(query.get("page"), 10);
+if (startPage) { position = target = Math.min(startPage - 1, pages - 1); shown = -1; render(); }
+</script>
+</body>
+</html>

@@ -78,13 +78,11 @@ class Overlays(private val root: FrameLayout, private val scale: Scale, private 
     }
 
     // a list of actions; anchored above (or below) a view, or centered on screen.
-    // a list taller than the screen allows scrolls inside the menu. the selected entry is an accent pill.
+    // a list taller than the screen allows scrolls inside the menu. the selected entry is an accent band
+    // across it, clipped to the menu's corners when first or last.
     fun menu(entries: List<MenuEntry>, anchor: View? = null): View {
         val layer = scrim()
-        val list = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, scale.tight, 0, scale.tight)
-        }
+        val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val panel = ScrollView(ctx).apply {
             id = R.id.menu
             background = rounded(palette.surfaceHi, scale.p(3))
@@ -101,23 +99,20 @@ class Overlays(private val root: FrameLayout, private val scale: Scale, private 
             }
             list.addView(
                 ctx.label(scale, color, entry.label).apply {
-                    setPadding(scale.gutter - scale.tight, 0, scale.gutter - scale.tight, 0)
+                    setPadding(scale.gutter, 0, scale.gutter, 0)
                     foreground = ctx.selectable()
                     isSelected = entry.selected
-                    if (entry.selected) background = rounded(palette.accent, scale.row / 2f)
+                    if (entry.selected) setBackgroundColor(palette.accent)
                     setOnClickListener {
                         dismiss(layer)
                         entry.action()
                     }
                 },
-                LinearLayout.LayoutParams(MATCH_PARENT, scale.row).apply {
-                    leftMargin = scale.tight
-                    rightMargin = scale.tight
-                },
+                LinearLayout.LayoutParams(MATCH_PARENT, scale.row),
             )
         }
         val w = scale.menuWidth
-        val h = minOf(entries.size * scale.row + 2 * scale.tight, root.height - 2 * scale.cell - navInset)
+        val h = minOf(entries.size * scale.row, root.height - 2 * scale.cell - navInset)
         val lp = FrameLayout.LayoutParams(w, h)
         if (anchor == null) {
             lp.gravity = Gravity.CENTER

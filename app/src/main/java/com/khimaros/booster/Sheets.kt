@@ -350,6 +350,7 @@ fun LauncherActivity.openSettings() {
     onOff(R.string.drawer_animation, { layout.settings.animateDrawer }) { s, on -> s.copy(animateDrawer = on) }
     onOff(R.string.hide_placed, { layout.settings.hidePlaced }) { s, on -> s.copy(hidePlaced = on) }
     onOff(R.string.remember_drawer, { layout.settings.rememberDrawer }) { s, on -> s.copy(rememberDrawer = on) }
+    onOff(R.string.stack_folders, { layout.settings.stackFolders }) { s, on -> s.copy(stackFolders = on) }
     // a custom order comes from dragging, so the only choice to offer is going back to names
     choice(
         R.string.drawer_order,

@@ -27,6 +27,16 @@ booster is a simple, lightweight, performant android home screen launcher.
 - folders can live on the home grid, in the dock, and in the app drawer.
 - apps in a drawer folder are listed inside that folder rather than at the
   top level of the drawer. drawer search still finds them.
+- option "folder stacks", off by default. on, the drawer has no folder cells:
+  each folder is one slot, and swiping up steps every slot to its folder's next
+  app, page by page, with no folder names or positions shown. the next page
+  slides up over the current one under the finger, one page per swipe, and
+  settles with the same rule and momentum as the drawer opening and closing. a
+  finished folder leaves its slot empty, entries past the last slot follow the
+  slot that runs out first, and the pages replace scrolling. swiping down steps
+  back, and closes the drawer from the first page. apps keep their folder's long-press
+  menu and drag to home or the dock. search works as usual. the drawer is
+  arranged, and its folders edited, with the option off.
 
 ## visual system
 
@@ -45,7 +55,8 @@ booster is a simple, lightweight, performant android home screen launcher.
 - the dock has no background; it is a row of icons.
 - bottom sheets fit their content; no empty filler space.
 - a setting with several values opens a popup listing all of them, with the
-  current one clearly marked (an accent pill), instead of cycling on tap.
+  current one clearly marked (an accent band across the popup, taking its
+  rounded corners when first or last), instead of cycling on tap.
 
 ## gestures
 
@@ -55,9 +66,11 @@ booster is a simple, lightweight, performant android home screen launcher.
 - the drawer animation is an option, on by default. off, the drawer opens and
   closes at once.
 - option "remember drawer", off by default. off, returning from an app finds
-  the home screen with the drawer closed and its search cleared. on, it finds
-  the drawer exactly as it was (search text, scroll), and pressing home while
-  already on the launcher closes it.
+  the first home page with the drawer and any open folder closed and the search
+  cleared. on, it finds the page, the drawer and an open folder, on home or in
+  the drawer, exactly as they were (search text, scroll), and pressing home
+  while already on the launcher closes them. locking the phone is not leaving
+  for an app, so it changes nothing either way.
 
 ## organizing
 

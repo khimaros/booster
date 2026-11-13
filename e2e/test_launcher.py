@@ -23,6 +23,9 @@ MAGENTA = (255, 0, 255)
 CYAN = (0, 255, 255)
 COLOR_SLACK = 16
 PINNED_KEY = f"{d.TESTPIN}/shortcut:page"
+STACK_SWIPE = 0.6
+STACK_MARGIN = 50
+LOCK_S = 3
 
 emulator = d.Emulator()
 
@@ -193,6 +196,27 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(len(auto), 1)
         self.assertTrue(auto[0].selected, "auto rows are the default")
 
+    def test_the_current_choice_is_a_band_across_the_menu(self):
+        self.open_settings()
+        d.tap(d.find(text="remember drawer"))
+        menu = d.find(rid="menu")
+        last = d.find(text="off", within="menu")
+        self.assertEqual(
+            (last.bounds[0], last.bounds[2], last.bounds[3]),
+            (menu.bounds[0], menu.bounds[2], menu.bounds[3]),
+            "the last choice reaches the menu's sides and bottom",
+        )
+        d.back()
+        d.absent(rid="menu")
+        d.tap(d.find(text="dock slots"))
+        middle = d.find(text="5", within="menu")
+        left, top, _, _ = middle.bounds
+        self.assertEqual(
+            d.pixel(left + 2, top + 2),
+            d.pixel(*middle.center),
+            "a band has square corners",
+        )
+
     def test_drawer_animation_can_be_turned_off(self):
         self.open_settings()
         d.tap(d.find(text="drawer animation"))
@@ -308,13 +332,118 @@ class LauncherTest(unittest.TestCase):
         self.open_drawer()
         self.assertNotEqual(d.find(rid="search").text, "cal")
 
-    def test_returning_from_an_app_finds_the_drawer_as_it_was_left(self):
+    def remember_drawer(self):
         self.open_settings()
         d.tap(d.find(text="remember drawer"))
         d.choose("on", within="menu")
         d.wait_layout(lambda l: l["settings"]["remember_drawer"] is True)
         d.back()
         d.absent(rid="sheet")
+
+    def open_home_folder(self):
+        self.group(self.add_to_home("Clock"), self.add_to_home("Calendar"))
+        d.wait_layout(lambda l: any(f["apps"] == [CLOCK, CALENDAR] for f in folders(l)))
+        d.tap(d.find(desc="folder", within="pager"))
+
+    def open_drawer_folder(self):
+        self.make_drawer_folder("plan")
+        d.tap(d.find(desc="plan", within="drawer_grid"))
+
+    def open_second_page(self):
+        """clock on the first page, calendar on the second, which is left on show."""
+        layout = d.wait_layout(lambda l: any(l["dock"]))
+        layout["pages"][0][0] = {"app": CLOCK}
+        layout["pages"].append([{"app": CALENDAR}])
+        d.seed_layout(layout)
+        d.find(desc="Clock", within="pager")
+        left, top, right, bottom = d.find(rid="pager").bounds
+        y = (top + bottom) // 2
+        d.touch("DOWN", right - 100, y)
+        for x in range(right - 100, left + 100, -40):
+            d.touch("MOVE", x, y)
+        d.touch("UP", left + 100, y)
+        d.absent(desc="Clock", within="pager")
+
+    def visit_calendar(self, within="folder_card"):
+        d.tap(d.find(desc="Calendar", within=within))
+        d.wait_resumed("com.android.calendar")
+        d.shell("input", "keyevent", "KEYCODE_HOME")
+        d.wait_resumed(d.PACKAGE)
+
+    def test_returning_from_an_app_closes_a_home_folder_by_default(self):
+        self.open_home_folder()
+        self.visit_calendar()
+        d.absent(rid="folder_card")
+        d.find(desc="folder", within="pager")
+
+    def test_returning_from_an_app_finds_a_home_folder_as_it_was_left(self):
+        self.remember_drawer()
+        self.open_home_folder()
+        self.visit_calendar()
+        d.find(desc="Calendar", within="folder_card")
+        d.shell("input", "keyevent", "KEYCODE_HOME")
+        d.absent(rid="folder_card")
+
+    def test_returning_from_an_app_closes_a_drawer_folder_by_default(self):
+        self.open_drawer_folder()
+        self.visit_calendar()
+        d.absent(rid="folder_card")
+        d.absent(rid="search")
+
+    def test_returning_from_an_app_finds_a_drawer_folder_as_it_was_left(self):
+        self.remember_drawer()
+        self.open_drawer_folder()
+        self.visit_calendar()
+        d.find(desc="Calendar", within="folder_card")
+        d.find(rid="search")
+        d.shell("input", "keyevent", "KEYCODE_HOME")
+        d.absent(rid="folder_card")
+        d.absent(rid="search")
+
+    def test_returning_from_an_app_finds_the_first_page_by_default(self):
+        self.open_second_page()
+        self.visit_calendar(within="pager")
+        d.find(desc="Clock", within="pager")
+        d.absent(desc="Calendar", within="pager")
+
+    def test_returning_from_an_app_finds_the_page_as_it_was_left(self):
+        self.remember_drawer()
+        self.open_second_page()
+        self.visit_calendar(within="pager")
+        d.find(desc="Calendar", within="pager")
+        d.absent(desc="Clock", within="pager")
+
+    def test_returning_from_an_app_keeps_a_sheet_and_its_page(self):
+        self.open_second_page()
+        self.open_settings()
+        d.shell("am", "start", "-n", CALENDAR)
+        d.wait_resumed("com.android.calendar")
+        d.shell("input", "keyevent", "KEYCODE_HOME")
+        d.wait_resumed(d.PACKAGE)
+        d.find(rid="sheet")
+        d.back()
+        d.absent(rid="sheet")
+        d.find(desc="Calendar", within="pager")
+
+    def test_locking_the_phone_keeps_the_page_and_folder(self):
+        self.open_second_page()
+        self.menu(d.find(desc="Calendar", within="pager"), "add to folder")
+        d.choose("new folder")
+        d.find(rid="sheet_name")
+        d.choose("done")
+        d.tap(d.find(desc="folder", within="pager"))
+        d.find(desc="Calendar", within="folder_card")
+        d.shell("input", "keyevent", "KEYCODE_SLEEP")
+        time.sleep(LOCK_S)
+        d.shell("input", "keyevent", "KEYCODE_WAKEUP")
+        d.shell("wm", "dismiss-keyguard")
+        d.wait_resumed(d.PACKAGE)
+        d.find(desc="Calendar", within="folder_card")
+        d.back()
+        d.find(desc="folder", within="pager")
+
+    def test_returning_from_an_app_finds_the_drawer_as_it_was_left(self):
+        self.remember_drawer()
         self.open_drawer()
         d.tap(d.find(rid="search"))
         d.type_text("cal")
@@ -847,6 +976,197 @@ class LauncherTest(unittest.TestCase):
             not moved or moved[0].bounds[1] < top,
             "holding near the bottom scrolls the grid",
         )
+
+    def seed_stacks(self, *folder_keys):
+        """drawer folders in this order, ahead of every loose app, with stacks on."""
+        layout = d.wait_layout(lambda l: any(l["dock"]))
+        layout["settings"]["stack_folders"] = True
+        layout["drawer_folders"] = [
+            {"folder": f"f{i}", "name": f"Zone{i:02}", "icon": None, "apps": keys}
+            for i, keys in enumerate(folder_keys)
+        ]
+        layout["drawer_order"] = [f"f{i}" for i in range(len(folder_keys))]
+        layout["next_id"] = 100
+        d.seed_layout(layout)
+        d.find(desc="Phone", within="dock")
+
+    def stack_cells(self):
+        """the labelled cells of the page on show, by label."""
+        return {n.desc: n for n in d.find_all(within="stack_grid") if n.desc}
+
+    def page_swipe(self, pages=STACK_SWIPE):
+        """a paused swipe over this share of a page, up when positive, so it leaves no fling."""
+        top, bottom = self.stack_span()
+        x = d.find(rid="search").center[0]
+        start = bottom - STACK_MARGIN if pages > 0 else top + STACK_MARGIN
+        end = start - pages * (bottom - top)
+        d.drag_and_hold(x, start, end)
+        time.sleep(0.3)
+        d.touch("UP", x, end)
+        time.sleep(0.6)
+
+    def stack_span(self):
+        """where the page sits: from below the status bar to the search bar."""
+        return d.find(rid="status_band").bounds[3], d.find(rid="search").bounds[1]
+
+    def test_stacks_step_each_folder_through_one_slot(self):
+        self.seed_stacks([CLOCK, CALENDAR, CONTACTS], [SETTINGS, DIALER])
+        self.open_drawer()
+        first = self.stack_cells()
+        self.assertIn("Clock", first)
+        self.assertIn("Settings", first)
+        self.assertNotIn("Calendar", first)
+        self.assertEqual(d.find_all(desc="Zone00"), [])
+        self.page_swipe()
+        second = self.stack_cells()
+        self.assertEqual(second["Calendar"].bounds, first["Clock"].bounds)
+        self.assertEqual(second["Phone"].bounds, first["Settings"].bounds)
+        self.assertEqual(set(second), {"Calendar", "Phone"})
+        self.page_swipe()
+        self.assertEqual(set(self.stack_cells()), {"Contacts"})
+        self.page_swipe()
+        self.assertEqual(set(self.stack_cells()), {"Contacts"}, "the last page ends it")
+
+    def test_the_next_page_slides_over_the_page_on_show(self):
+        self.seed_stacks([CLOCK, CALENDAR], [SETTINGS, DIALER])
+        self.open_drawer()
+        top, bottom = self.stack_span()
+        x = d.find(rid="search").center[0]
+        start = bottom - STACK_MARGIN
+        end = start - (bottom - top) // 4
+        d.drag_and_hold(x, start, end)
+        time.sleep(0.3)
+        rising = d.find(rid="stack_next")
+        self.assertLess(
+            abs(rising.bounds[1] - (bottom - (bottom - top) // 4)), STACK_MARGIN
+        )
+        d.find(desc="Clock", within="stack_grid")
+        d.find(rid="stack_line")
+        d.touch("UP", x, end)
+        time.sleep(0.6)
+        self.assertIn("Clock", self.stack_cells(), "a short swipe falls back")
+        d.absent(rid="stack_next")
+
+    def test_the_sliding_page_hides_the_icons_it_covers(self):
+        # only the fourth column has a next app, so nothing arriving lands on the sampled icon
+        self.seed_stacks([CLOCK], [SETTINGS], [CONTACTS], [CALENDAR, DIALER])
+        self.open_drawer()
+        cells = self.stack_cells()
+        lowest = max(cells.values(), key=lambda n: (n.bounds[1], -n.bounds[0]))
+        next_left = d.find(desc="Calendar", within="stack_grid").bounds[0]
+        self.assertLess(lowest.bounds[0], next_left, "the sampled icon has no arrival")
+        self.assertTrue(self.lit(lowest), "the icon is drawn")
+        _, bottom = self.stack_span()
+        x = d.find(rid="search").center[0]
+        start = bottom - STACK_MARGIN
+        # the page starts moving at the first step of the drag, so ask for a little more
+        end = start - (bottom - lowest.bounds[1] + STACK_MARGIN) * 5 // 4
+        d.drag_and_hold(x, start, end)
+        time.sleep(0.3)
+        self.assertLess(d.find(rid="stack_next").bounds[1], lowest.bounds[1])
+        covered = self.lit(lowest)
+        d.touch("UP", x, end)
+        self.assertFalse(covered, "the page is black over the icon")
+
+    def lit(self, cell):
+        """whether any pixel in the middle of a cell's icon is not black."""
+        rows = d.icon_pixels(cell)
+        return any(
+            row[i : i + 3] != b"\0\0\0" for row in rows for i in range(0, len(row), 4)
+        )
+
+    def test_a_flick_moves_one_page_at_a_time(self):
+        self.seed_stacks([CLOCK, CALENDAR, CONTACTS, SETTINGS, DIALER])
+        self.open_drawer()
+        top, bottom = self.stack_span()
+        x = str(d.find(rid="search").center[0])
+        d.shell("input", "swipe", x, str(bottom - 100), x, str(top + 100), "120")
+        time.sleep(0.8)
+        self.assertIn("Calendar", self.stack_cells())
+        d.shell("input", "swipe", x, str(bottom - 100), x, str(bottom - 300), "80")
+        time.sleep(0.8)
+        self.assertIn(
+            "Contacts", self.stack_cells(), "a short flick still turns a page"
+        )
+
+    def test_stacks_close_from_the_first_page_only(self):
+        self.seed_stacks([CLOCK, CALENDAR], [SETTINGS, DIALER])
+        self.open_drawer()
+        self.page_swipe()
+        self.page_swipe(-STACK_SWIPE)
+        self.assertIn("Clock", self.stack_cells())
+        d.find(rid="search")
+        x, y = d.find(rid="stack_grid").center
+        d.shell("input", "swipe", str(x), str(y), str(x), str(y + 700), "300")
+        d.absent(rid="search")
+
+    def test_stacks_start_over_when_the_drawer_reopens(self):
+        self.seed_stacks([CLOCK, CALENDAR], [SETTINGS, DIALER])
+        self.open_drawer()
+        self.page_swipe()
+        self.assertIn("Calendar", self.stack_cells())
+        d.back()
+        d.absent(rid="search")
+        self.open_drawer()
+        self.assertIn("Clock", self.stack_cells())
+
+    def test_entries_past_the_last_slot_start_where_a_slot_empties(self):
+        keys = [[f"x.y/x.y.A{i:02}", f"x.y/x.y.B{i:02}"] for i in range(40)]
+        self.seed_stacks(*keys)
+        self.open_drawer()
+        seen = set()
+        for _ in range(5):
+            seen |= set(self.stack_cells())
+            self.page_swipe()
+        wanted = {name for pair in keys for name in (k[-3:] for k in pair)}
+        self.assertEqual(wanted - seen, set())
+
+    def test_a_stacked_app_opens_and_has_its_folder_menu(self):
+        self.seed_stacks([CLOCK, CONTACTS, CALENDAR], [SETTINGS, DIALER])
+        self.open_drawer()
+        self.page_swipe()
+        self.menu(self.stack_cells()["Contacts"], "remove from folder")
+        d.wait_layout(lambda l: CONTACTS not in l["drawer_folders"][0]["apps"])
+        d.find(rid="search")
+        d.back()
+        d.absent(rid="search")
+        self.open_drawer()
+        self.page_swipe()
+        self.addCleanup(d.shell, "am", "force-stop", "com.android.calendar")
+        d.tap(self.stack_cells()["Calendar"])
+        d.wait_resumed("com.android.calendar")
+
+    def test_a_stacked_app_drags_to_home_and_stays_in_its_folder(self):
+        self.seed_stacks([CLOCK, CALENDAR], [SETTINGS, DIALER])
+        self.open_drawer()
+        cells = self.stack_cells()
+        d.drag(cells["Clock"], cells["Settings"], via=[(cells["Clock"].center[0], 900)])
+        layout = d.wait_layout(lambda l: {"app": CLOCK} in home_items(l))
+        self.assertIn(CLOCK, layout["drawer_folders"][0]["apps"])
+        d.absent(rid="search")
+
+    def test_search_replaces_the_stacks(self):
+        self.seed_stacks([CLOCK, CALENDAR], [SETTINGS, DIALER])
+        self.open_drawer()
+        d.tap(d.find(rid="search"))
+        d.type_text("cal")
+        d.find(desc="Calendar", within="drawer_grid")
+        d.absent(rid="stack_grid")
+
+    def test_stacks_are_a_setting(self):
+        self.open_drawer()
+        d.absent(rid="stack_grid")
+        d.back()
+        d.absent(rid="search")
+        self.open_settings()
+        d.tap(d.find(text="folder stacks"))
+        self.assertTrue(d.find(text="off", within="menu").selected)
+        d.choose("on", within="menu")
+        d.wait_layout(lambda l: l["settings"]["stack_folders"] is True)
+        d.back()
+        d.absent(rid="sheet")
+        self.open_drawer()
+        d.find(rid="stack_grid")
 
     def test_drawer_order_can_return_to_sorted_by_name(self):
         self.open_drawer()

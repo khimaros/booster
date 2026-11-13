@@ -1,5 +1,6 @@
 package com.khimaros.booster
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
@@ -24,7 +25,9 @@ import android.widget.GridView
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.hypot
+import kotlin.math.round
 
 private const val EDGE_FLIP_MS = 600L
 private const val SETTLE_MS = 280L
@@ -233,6 +236,36 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         isVerticalScrollBarEnabled = false
         overScrollMode = OVER_SCROLL_NEVER
     }
+    // folder stacks: the page on show, and during a move the next page sliding over it on a black sheet
+    val stackFront = CellGrid(ctx, scale, COLUMNS).apply {
+        id = R.id.stack_grid
+        visibility = INVISIBLE
+    }
+    val stackNext = CellGrid(ctx, scale, COLUMNS)
+    private val stackPage = FrameLayout(ctx).apply {
+        id = R.id.stack_next
+        setBackgroundColor(Color.BLACK)
+        visibility = INVISIBLE
+        addView(stackNext, LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER_HORIZONTAL))
+    }
+    private val stackLine = PageLine(ctx, scale, palette).apply {
+        id = R.id.stack_line
+        held = { paging }
+    }
+    var bindStack: (CellView, StackItem?) -> Unit = { _, _ -> }
+    var onStackSlots: () -> Unit = {}
+    var stackSlots = 0
+        private set
+    private var reels: List<List<StackItem>> = emptyList()
+    private var stackPosition = 0f
+    private var shownPage = -1
+    private var paging = false
+    private var pagingFrom = 0f
+    private var stackSettle: ValueAnimator? = null
+    // from the page's place down to the search bar, where the next page waits out of sight
+    private val stackTravel get() = (height - topInset - navInset - scale.row - 3 * scale.gutter).toFloat()
+    private val lastPage get() = maxOf(0, (reels.maxOfOrNull { it.size } ?: 1) - 1)
+    val stacked get() = stackFront.visibility == VISIBLE
     val search = EditText(ctx).apply {
         id = R.id.search
         hint = ctx.getString(R.string.search_apps)
@@ -274,6 +307,7 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
     // unset until the first setInsets
     private var topInset = -1
     private var bottomInset = -1
+    private var navInset = -1
     private var results: Int? = null
 
     // solid strips behind the status bar and the search bar hide icons scrolling under them,
@@ -290,19 +324,26 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         id = R.id.drawer
         setBackgroundColor(Color.BLACK)
         addView(grid, LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        addView(stackFront, LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        addView(stackPage, LayoutParams(MATCH_PARENT, 0, Gravity.TOP))
         addView(statusBand, LayoutParams(MATCH_PARENT, 0, Gravity.TOP))
         addView(searchBand, LayoutParams(MATCH_PARENT, 0, Gravity.BOTTOM))
+        addView(stackLine, LayoutParams(MATCH_PARENT, scale.px(0), Gravity.BOTTOM))
         addView(search, LayoutParams(MATCH_PARENT, scale.row, Gravity.BOTTOM))
         addView(zoneHome, LayoutParams(MATCH_PARENT, scale.row, Gravity.BOTTOM))
         isClickable = true
-        setInsets(0, 0)
+        setInsets(0, 0, 0)
     }
 
-    // insets arrive repeatedly (keyboard, bars); relayout only when they move
-    fun setInsets(top: Int, bottom: Int) {
-        if (top == topInset && bottom == bottomInset) return
+    // insets arrive repeatedly (keyboard, bars); relayout only when they move. `bottom` includes the keyboard
+    // and `nav` does not, because stacks must not change shape as the keyboard comes and goes.
+    fun setInsets(top: Int, bottom: Int, nav: Int) {
+        if (top == topInset && bottom == bottomInset && nav == navInset) return
         topInset = top
         bottomInset = bottom
+        navInset = nav
+        (stackLine.layoutParams as LayoutParams).bottomMargin = bottom + scale.row + scale.gutter + (scale.gutter - scale.px(0)) / 2
+        listOf(stackPage, stackFront).forEach { (it.layoutParams as LayoutParams).topMargin = top + scale.gutter }
         listOf(search, zoneHome).forEach {
             (it.layoutParams as LayoutParams).apply {
                 leftMargin = scale.gutter
@@ -336,6 +377,89 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         // gridview only centers cells within their columns, so center the columns with padding
         val side = maxOf(0, (width - COLUMNS * scale.cell) / 2)
         grid.setPadding(side, top + maxOf(0, free), side, bottom)
+        val space = maxOf(0, stackTravel.toInt())
+        if (stackPage.layoutParams.height != space) stackPage.layoutParams = stackPage.layoutParams.apply { height = space }
+        val slots = (space + scale.rowGap) / (scale.cell + scale.rowGap) * COLUMNS
+        if (slots != stackSlots) {
+            stackSlots = slots
+            onStackSlots()
+        }
+    }
+
+    // keeps the page on show, or the last page if the reels got shorter
+    fun showStacks(next: List<List<StackItem>>) {
+        reels = next
+        stackLine.count = lastPage + 1
+        stackFront.visibility = VISIBLE
+        grid.visibility = INVISIBLE
+        shownPage = -1
+        moveStacks(stackPosition.coerceIn(0f, lastPage.toFloat()))
+    }
+
+    fun hideStacks() {
+        stackSettle?.cancel()
+        paging = false
+        stackFront.visibility = INVISIBLE
+        stackPage.visibility = INVISIBLE
+        grid.visibility = VISIBLE
+    }
+
+    private fun bindPage(cells: CellGrid, page: Int) {
+        for (i in 0 until cells.childCount) {
+            bindStack(cells.getChildAt(i) as CellView, reels.getOrNull(i)?.getOrNull(page))
+        }
+    }
+
+    // a position between two pages shows the later one partway over the earlier
+    private fun moveStacks(position: Float) {
+        val page = floor(position).toInt()
+        val rise = position - page
+        stackPosition = position
+        stackLine.position = position
+        if (page != shownPage) {
+            shownPage = page
+            bindPage(stackFront, page)
+            bindPage(stackNext, page + 1)
+        }
+        stackPage.visibility = if (rise > 0f) VISIBLE else INVISIBLE
+        stackPage.translationY = (1 - rise) * stackTravel
+    }
+
+    private fun followStacks(ev: MotionEvent) {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                val from = round(pagingFrom)
+                val position = (pagingFrom + (downY - ev.rawY) / stackTravel)
+                    .coerceIn(maxOf(0f, from - 1), minOf(lastPage.toFloat(), from + 1))
+                moveStacks(if (animated) position else round(position))
+                stackLine.flash()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val vy = velocity?.run {
+                    computeCurrentVelocity(1000)
+                    yVelocity
+                } ?: 0f
+                paging = false
+                settleStacks(vy)
+            }
+        }
+    }
+
+    // a page turns or falls back exactly as the drawer opens or closes, one page per swipe
+    private fun settleStacks(velocityY: Float) {
+        val from = round(pagingFrom)
+        val moved = stackPosition - from
+        val turns = passed(abs(moved) * stackTravel, if (moved > 0) -velocityY else velocityY, stackTravel)
+        val target = if (moved != 0f && turns) from + if (moved > 0) 1 else -1 else from
+        stackLine.flash()
+        if (!animated) return moveStacks(target)
+        stackSettle = ValueAnimator.ofFloat(stackPosition, target).apply {
+            val towardTarget = if (target > stackPosition) -velocityY else velocityY
+            duration = settleMs(abs(target - stackPosition) * stackTravel, towardTarget, minFling)
+            interpolator = decelerate
+            addUpdateListener { moveStacks(it.animatedValue as Float) }
+            start()
+        }
     }
 
     fun showDragUi(dragging: Boolean) {
@@ -410,9 +534,9 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
     fun release(distance: Float, velocityY: Float) =
         settle(open = !animated || passed(distance, -velocityY), velocityY = velocityY)
 
-    // a drag released past 1/phi^2 of the height, or flung onward, completes; otherwise it falls back
-    private fun passed(distance: Float, velocity: Float) =
-        velocity > minFling || (velocity >= -minFling && distance > height / (PHI * PHI))
+    // a drag released past 1/phi^2 of its span, or flung onward, completes; otherwise it falls back
+    private fun passed(distance: Float, velocity: Float, span: Float = height.toFloat()) =
+        velocity > minFling || (velocity >= -minFling && distance > span / (PHI * PHI))
 
     // velocityY is the finger's release speed in px/s (positive is down); it carries into the settle
     // resetting the search rebuilds the grid, so it waits until the drawer is out of sight
@@ -424,6 +548,8 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
         val finish = {
             if (!open) {
                 visibility = INVISIBLE
+                stackSettle?.cancel()
+                moveStacks(0f)
                 if (search.text.isNotEmpty()) search.setText("")
                 search.clearFocus()
                 grid.setSelection(0)
@@ -451,6 +577,10 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         track(ev)
+        if (paging) {
+            followStacks(ev)
+            return true
+        }
         if (!closing) {
             recognize(ev)
             return true
@@ -477,20 +607,29 @@ class DrawerView(ctx: Context, private val scale: Scale, palette: Palette) : Fra
                 downX = ev.rawX
                 downY = ev.rawY
                 closing = false
+                paging = false
             }
             MotionEvent.ACTION_MOVE -> {
                 // one slop, like the grid: this check runs before the grid sees the move, so the drawer
                 // claims a downward swipe at the top even when it starts on an app
                 val down = ev.rawY - downY
-                if (!closing && down > slop && down > abs(ev.rawX - downX) && !grid.canScrollVertically(-1)) {
+                val vertical = abs(down) > slop && abs(down) > abs(ev.rawX - downX)
+                val atTop = if (stacked) stackPosition == 0f else !grid.canScrollVertically(-1)
+                if (closing || paging || !vertical) return closing || paging
+                if (down > 0 && atTop) {
                     closing = true
                     animate().cancel()
                     if (animated) translationY = down
                     search.hideKeyboard()
+                } else if (stacked) {
+                    paging = true
+                    stackSettle?.cancel()
+                    pagingFrom = stackPosition
+                    downY = ev.rawY
                 }
             }
         }
-        return closing
+        return closing || paging
     }
 
     private fun track(ev: MotionEvent) {

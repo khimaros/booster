@@ -35,6 +35,8 @@ data class Settings(
     val hidePlaced: Boolean = false,
     // coming back from an app finds the drawer, its search and scroll as they were
     val rememberDrawer: Boolean = false,
+    // the drawer shows a folder as one slot stepping through its apps, page by page
+    val stackFolders: Boolean = false,
 )
 
 // the whole persisted launcher state. every change is a pure function returning a new layout.
@@ -62,6 +64,9 @@ data class DrawerSlot(val key: String) : Slot
 // how a drag lands on a drawer entry: beside it, or on it (joining a folder, swapping with anything else)
 enum class Drop { BEFORE, ONTO, AFTER }
 
+// one app in a drawer stack, and where it really lives
+data class StackItem(val item: AppItem, val slot: Slot)
+
 fun emptyPage(rows: Int): List<Item?> = List(rows * COLUMNS) { null }
 
 fun newLayout(dockKeys: List<String>): Layout {
@@ -74,6 +79,16 @@ fun newLayout(dockKeys: List<String>): Layout {
 }
 
 private fun <T> List<T>.replaced(index: Int, value: T) = mapIndexed { i, v -> if (i == index) value else v }
+
+// what each drawer slot steps through, one item per page. entries past the last slot follow the slot that
+// runs out first, so all of them are reachable without a scroll.
+fun <T> stackReels(entries: List<List<T>>, slots: Int): List<List<T>> {
+    if (slots <= 0) return emptyList()
+    return entries.drop(slots).fold(entries.take(slots)) { reels, entry ->
+        val shortest = reels.indices.minBy { reels[it].size }
+        reels.replaced(shortest, reels[shortest] + entry)
+    }
+}
 
 fun Layout.itemAt(slot: Slot): Item? = when (slot) {
     is HomeSlot -> pages.getOrNull(slot.page)?.getOrNull(slot.index)

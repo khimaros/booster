@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>booster: value menu corners</title>
+<style>
+  /* the scale on a 411dp wide phone: p(n) = base * phi^(n - 2), base = width / 30.65 */
+  :root {
+    --p1: 8.30px; --p2: 13.42px; --p3: 21.72px; --p5: 56.86px; --p8: 240.8px;
+    --surface-hi: rgb(47, 48, 54); --accent: rgb(178, 197, 255); --on-accent: rgb(27, 45, 96);
+    --fg: rgb(227, 226, 233); --dim: rgb(10, 11, 13); --note: rgb(150, 150, 160);
+  }
+  body { margin: 0; padding: 24px; background: var(--dim); color: var(--fg); font: 16px/1.4 Roboto, "Noto Sans", sans-serif; }
+  h1 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+  p.lede { margin: 0 0 24px; color: var(--note); max-width: 1100px; }
+  .options { display: grid; grid-template-columns: repeat(4, 280px); gap: 28px; }
+  .option h2 { font-size: 15px; font-weight: 500; margin: 0 0 4px; }
+  .option p { font-size: 13px; color: var(--note); margin: 0 0 16px; min-height: 72px; }
+  .menu {
+    width: var(--p8); background: var(--surface-hi); border-radius: var(--outer);
+    padding: var(--inset) 0; margin-bottom: 24px; overflow: hidden;
+  }
+  .row {
+    height: var(--p5); margin: 0 var(--inset); padding: 0 var(--label);
+    display: flex; align-items: center; font-size: var(--p2); line-height: var(--p3);
+    border-radius: var(--inner);
+  }
+  .row.selected { background: var(--accent); color: var(--on-accent); }
+  .current  { --outer: var(--p3); --inset: var(--p1); --inner: calc(var(--p5) / 2); --label: var(--p2); }
+  .concentric { --outer: var(--p3); --inset: var(--p1); --inner: var(--p2); --label: var(--p2); }
+  .bleed    { --outer: var(--p3); --inset: 0px; --inner: 0px; --label: var(--p3); }
+  .stadium  { --outer: calc(var(--p5) / 2 + var(--p1)); --inset: var(--p1); --inner: calc(var(--p5) / 2); --label: var(--p2); }
+</style>
+</head>
+<body>
+<h1>value menu corners</h1>
+<p class="lede">a menu like "remember drawer" or "home grid" at real size. the pill sits p(1) inside the menu, so
+its corners should curve parallel to the menu's, with a radius of the menu's minus p(1).</p>
+<div class="options">
+  <div class="option current">
+    <h2>now</h2>
+    <p>pill radius p(5)/2 (28dp) inside a p(3) (22dp) menu corner. the pill curves wider than the corner it sits
+    in, so the gap pinches at the sides and opens at the corners.</p>
+  </div>
+  <div class="option concentric">
+    <h2>a. concentric (recommended)</h2>
+    <p>pill radius p(3) - p(1), which on this scale is exactly p(2) (13dp). the gap stays p(1) all the way
+    round. one-line change.</p>
+  </div>
+  <div class="option bleed">
+    <h2>b. full width band</h2>
+    <p>no inset: the selection spans the menu and takes its corners when first or last. no longer a pill, which
+    REQUIREMENTS.md names, so it needs your approval.</p>
+  </div>
+  <div class="option stadium">
+    <h2>c. rounder menu</h2>
+    <p>keeps the round pill and grows the menu corner to p(5)/2 + p(1) (37dp) around it. softer, and wider
+    than the sheets' p(4) corners.</p>
+  </div>
+</div>
+<div class="options" id="menus"></div>
+<script>
+  const menus = [
+    [["on", false], ["off", true]],
+    [["auto (4 x 7)", true], ["4 x 4", false], ["4 x 5", false], ["4 x 6", false], ["4 x 7", false]],
+  ];
+  for (const variant of ["current", "concentric", "bleed", "stadium"]) {
+    const column = document.createElement("div");
+    column.className = variant;
+    for (const entries of menus) {
+      const menu = document.createElement("div");
+      menu.className = "menu";
+      for (const [label, selected] of entries) {
+        const row = document.createElement("div");
+        row.className = selected ? "row selected" : "row";
+        row.textContent = label;
+        menu.appendChild(row);
+      }
+      column.appendChild(menu);
+    }
+    document.getElementById("menus").appendChild(column);
+  }
+</script>
+</body>
+</html>

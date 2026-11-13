@@ -55,6 +55,7 @@
     <string name="drawer_animation">drawer animation</string>
     <string name="hide_placed">hide home apps from drawer</string>
     <string name="remember_drawer">remember drawer</string>
+    <string name="stack_folders">folder stacks</string>
     <string name="drawer_order">drawer order</string>
     <string name="drawer_order_name">by name</string>
     <string name="drawer_order_custom">custom</string>

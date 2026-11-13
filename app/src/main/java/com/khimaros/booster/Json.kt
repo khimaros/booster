@@ -24,7 +24,8 @@ fun Layout.toJson(): JSONObject = JSONObject()
             .put("wallpaper", settings.wallpaper)
             .put("animate_drawer", settings.animateDrawer)
             .put("hide_placed", settings.hidePlaced)
-            .put("remember_drawer", settings.rememberDrawer),
+            .put("remember_drawer", settings.rememberDrawer)
+            .put("stack_folders", settings.stackFolders),
     )
     .put("next_id", nextId)
 
@@ -78,6 +79,7 @@ fun parseLayout(json: JSONObject): Layout {
         animateDrawer = s.optBoolean("animate_drawer", true),
         hidePlaced = s.optBoolean("hide_placed", false),
         rememberDrawer = s.optBoolean("remember_drawer", false),
+        stackFolders = s.optBoolean("stack_folders", false),
     )
     val size = settings.rows * COLUMNS
     val pages = json.optJSONArray("pages").items()

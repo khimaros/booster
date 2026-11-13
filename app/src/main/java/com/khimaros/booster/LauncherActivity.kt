@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.Process
 import android.os.UserHandle
 import android.text.Editable
@@ -75,6 +76,7 @@ class LauncherActivity : Activity() {
     private var touchY = 0f
     private val slop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
     private val launcherApps by lazy { getSystemService(LauncherApps::class.java) }
+    private val power by lazy { getSystemService(PowerManager::class.java) }
 
     // a pin accepted in PinActivity reaches the layout through onShortcutsChanged, which needs no running ui
     private val packageCallback = object : LauncherApps.Callback() {
@@ -129,21 +131,26 @@ class LauncherActivity : Activity() {
         super.onDestroy()
     }
 
+    // the screen turning off stops the launcher too, and locking the phone is not leaving for an app
     override fun onStop() {
         super.onStop()
-        leftForApp = true
+        if (power.isInteractive) leftForApp = true
     }
 
     // closing on the way back rather than the way out shows no flash of home while the app opens. launch()
     // also counts as leaving, because a translucent app never stops the launcher. with the drawer shut
-    // nothing happens, so a sheet waiting on a file picker's result survives.
+    // a sheet stays as it was, page included, so one waiting on a file picker's result survives.
     override fun onResume() {
         super.onResume()
-        val forget = leftForApp && drawer.isOpen && !layout.settings.rememberDrawer
+        val forget = leftForApp && !layout.settings.rememberDrawer
         leftForApp = false
         if (!forget) return
-        overlays.clear()
-        drawer.closeNow()
+        openCard?.let(overlays::dismiss)
+        if (drawer.isOpen) {
+            overlays.clear()
+            drawer.closeNow()
+        }
+        if (overlays.isEmpty) home.pager.snapTo(0, animate = false)
     }
 
     // pressing home while already home closes everything and returns to the first page. coming back
@@ -182,7 +189,7 @@ class LauncherActivity : Activity() {
             Triple(insets.systemWindowInsetTop, insets.stableInsetBottom, insets.systemWindowInsetBottom)
         }
         home.setInsets(top, nav)
-        drawer.setInsets(top, max(nav, ime))
+        drawer.setInsets(top, max(nav, ime), nav)
         overlays.setInsets(nav, ime)
         return insets
     }
@@ -364,6 +371,8 @@ class LauncherActivity : Activity() {
     private fun wireDrawer() {
         drawer.grid.adapter = drawerAdapter
         drawer.grid.setOnDragListener(drawerDropListener)
+        drawer.bindStack = { cell, entry -> bind(cell, entry?.item, entry?.slot, layout.settings.showLabels) }
+        drawer.onStackSlots = ::refreshDrawer
         drawer.zoneHome.setOnDragListener { _, ev ->
             if (ev.localState !is DragPayload) return@setOnDragListener false
             if (ev.action == DragEvent.ACTION_DRAG_ENTERED) closeDrawer()
@@ -397,6 +406,19 @@ class LauncherActivity : Activity() {
         drawerAdapter.entries = drawerEntries(query)
         drawer.alignResults(if (query.isEmpty()) null else drawerAdapter.entries.size)
         drawerAdapter.notifyDataSetChanged()
+        if (layout.settings.stackFolders && query.isEmpty()) showStacks() else drawer.hideStacks()
+    }
+
+    private fun showStacks() {
+        listOf(drawer.stackFront, drawer.stackNext).forEach { ensureCells(it, drawer.stackSlots) { null } }
+        drawer.showStacks(stackReels(drawerEntries("").map(::stackOf), drawer.stackSlots))
+    }
+
+    // the apps a drawer entry steps through: a folder's, or just the app itself
+    private fun stackOf(entry: Item): List<StackItem> = when (entry) {
+        is AppItem -> listOf(StackItem(entry, DrawerSlot(entry.key)))
+        is Folder -> drawerFolderApps(entry).map { StackItem(AppItem(it), FolderSlot(entry.id, it)) }
+        is FolderLink -> emptyList()
     }
 
     private val byLabel get() = compareBy<AppInfo> { labelOf(it.key).lowercase() }
@@ -660,7 +682,7 @@ class LauncherActivity : Activity() {
         val payload = DragPayload(cell.slot ?: return, cell.item ?: return)
         drag = payload
         // search results are not the drawer's arrangement, so a drag from them goes straight to home
-        val rearranging = payload.source is DrawerSlot && drawer.isOpen && drawer.search.text.isEmpty()
+        val rearranging = payload.source is DrawerSlot && drawer.isOpen && drawer.search.text.isEmpty() && !drawer.stacked
         // drop targets must be showing when the drag starts to receive its events
         home.showDragUi(true)
         drawer.showDragUi(rearranging)
@@ -671,7 +693,8 @@ class LauncherActivity : Activity() {
         }
         // an app dragged from an open folder keeps the folder (and the drawer under it) open, so it can be
         // rearranged; leaving the card reveals home
-        if (payload.source is FolderSlot || rearranging) return
+        val inCard = payload.source is FolderSlot && openCard?.let(overlays::isShowing) == true
+        if (inCard || rearranging) return
         overlays.clear()
         closeDrawer()
     }
